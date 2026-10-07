@@ -2436,25 +2436,32 @@ function startPull(receiving){
 }
 /* ---- the computer's thrower ----
    He looks for a moment, then throws to the teammate who is most open and gains the most, leading him to where
-   he'll be when it gets there. If nobody is open he waits, and by a stall count of 7 he throws to the best there is. */
+   he'll be when it gets there. If nobody is open he waits, and by a stall count of 7 he throws to the best there is.
+   He aims like a person, not a machine (user, 2026-10-07: aiming is the hard part of the game, and the computer used
+   to aim perfectly): he misjudges how far to lead the runner (anywhere from AI_LEAD[0] to AI_LEAD[1] of the right
+   amount), his aim is off by up to AI_MISS(D) yards on top of his throwing rating, and AI_BAD_READ of the time he
+   picks a receiver who isn't the best one. */
+const AI_LEAD = [.4, 1.2], AI_MISS = D => 2.5 + .17 * D, AI_BAD_READ = .15;
 function aiThrow(side, dt){
   const h = M.disc.holder; if (!h || h.side !== side) return;
   M.think -= dt; if (M.think > 0 || teamOf(side)[h.i].slide) return;
   const e = teamOf(side)[h.i], foes = teamOf(otherSide(side)), d = dirOf(side), R = maxRange(e.p);
-  let best = null;
+  let best = null; const all = [], lf = rnd(AI_LEAD[0], AI_LEAD[1]);
   teamOf(side).forEach((m, i) => {
     if (i === h.i) return;
-    const D0 = dist(e, m), lead = flightTime(D0, e.p.str) * .85;
+    const D0 = dist(e, m), lead = flightTime(D0, e.p.str) * lf;
     const P = { x:clamp(m.x + (m.vx || 0) * lead, 2, FL - 2), y:clamp(m.y + (m.vy || 0) * lead, 2, FW - 2) }, D = dist(e, P);
     if (D < 5 || D > R) return;
     const open = Math.min(...foes.map((f, k) => k === 0 ? 99 : dist(f, P)));   // everyone but the mark
     const gain = (P.x - e.x) * d;
     const sc = gain * .55 + Math.min(open, 8) * 2.4 - Math.max(0, D - 30) * .35 + rnd(0, 6) + (inGoal(P, side) ? 8 : 0);
-    if (!best || sc > best.sc) best = { sc, P, open };
+    all.push({ sc, P, open, D }); if (!best || sc > best.sc) best = all[all.length - 1];
   });
   if (!best) { M.think = .3; return; }
   if (best.open < 2.4 && M.stall < 7) { M.think = .3; return; }
-  throwDisc(side, e, best.P);
+  if (Math.random() < AI_BAD_READ) best = pick(all);                 // the wrong read
+  const off = Math.random() * AI_MISS(best.D), ang = Math.random() * Math.PI * 2;   // and a hand that isn't perfectly steady
+  throwDisc(side, e, { x:best.P.x + Math.cos(ang) * off, y:best.P.y + Math.sin(ang) * off });
 }
 
 /* ---- the loop ---- */
