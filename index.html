@@ -599,12 +599,13 @@ function newGame(pickAbbr){
   const league = TEAMS.map(T => ({ id:T.abbr, city:T.city, name:T.name, abbr:T.abbr, conf:T.conf, c1:T.c1, c2:T.c2, w:0, l:0, pf:0, pa:0, players:[] }));
   const mine = league.find(t => t.id === pickAbbr);
   mine.id = 'U'; mine.user = true;
-  // every other club gets five players around its own level, from strugglers (1.5 stars) to contenders (4.3)
-  for (const t of league) { if (t.user) continue; const lv = rnd(1.5, 4.3); t.players = POS.map(pos => starPlayer(pos, Math.round((lv + rnd(-1, 1)) * 2) / 2)); }
+  // every other club gets five players around its own level: most between 1.5 and 3 stars, about one in seven a star better
+  for (const t of league) { if (t.user) continue; const lv = rnd(1.5, 3.1) + (Math.random() < .15 ? 1 : 0); t.players = POS.map(pos => starPlayer(pos, Math.round((lv + rnd(-1, 1)) * 2) / 2)); }
   const roster = {};
   for (const pos of POS) {
-    const p = makePlayer(pos, starsTarget(1) + rnd(-.2, .2), ri(21, 30)); p.sal = 1; p.yrs = ri(1, 2); roster[pos] = p;
-    while (Math.round(pAvg(p) * 4) > 8) { const k = RATE.reduce((a, b) => p[a] >= p[b] ? a : b); p[k]--; }   // your five start at 1 star
+    const p = makePlayer(pos, starsTarget(2) + rnd(-.2, .2), ri(21, 30)); p.sal = 1; p.yrs = ri(1, 2); roster[pos] = p;
+    // your five start at exactly 2 stars (user, 2026-10-07; it was 1 star): nudge the best or worst rating until he's in the 2-star band
+    for (let g = 0; pStars(p) !== 2 && g < 40; g++) { const up = pStars(p) < 2, k = RATE.reduce((a, b) => (up ? p[a] <= p[b] : p[a] >= p[b]) ? a : b); p[k] = clamp(p[k] + (up ? 1 : -1), 1, 10); }
   }
   const used = new Set(); for (const pos of POS) { const p = roster[pos]; while (used.has(p.num)) p.num = ri(0, 55); used.add(p.num); }
   G = { v:2, season:1, week:0, phase:'regular', cash:2, credits:4, fans:25, boosts:[], gpSeason:0, cap:CAP_START, ticket:TICKET_FAIR, target:7,
@@ -1060,7 +1061,7 @@ function createHTML(){
       <span class="tn">${esc(T.city)}<br><b>${esc(T.name)}</b></span></button>`).join('') + '</div>';
   const T = TEAMS.find(x => x.abbr === pickedTeam);
   return `<div class="title" style="margin-bottom:8px">RETRO DISC</div>
-    <div class="muted intro" style="text-align:center;margin-bottom:10px">Pick your club. You take it over with five 1-star players and build from there: sign free agents, train your players, win the league.</div>
+    <div class="muted intro" style="text-align:center;margin-bottom:10px">Pick your club. You take it over with five 2-star players and build from there: sign free agents, train your players, win the league.</div>
     <div class="hub"><div class="panel">${col('E')}${col('C')}</div>
     <div class="panel">${col('S')}${col('W')}</div></div>
     <div class="row" style="margin-top:10px"><button class="btn" data-a="toSlots">Saves</button><div class="grow muted">Slot ${SLOT} · ${T ? `${esc(T.city)} ${esc(T.name)} · ${DIV_NAME[T.conf]} Division` : 'Tap a team.'}</div><button class="btn go" id="cGo" ${T ? '' : 'disabled'}>Take the job</button></div>`;
@@ -2451,11 +2452,11 @@ function startPull(receiving){
    to aim perfectly): he misjudges how far to lead the runner (anywhere from AI_LEAD[0] to AI_LEAD[1] of the right
    amount), his aim is off by up to AI_MISS(D) yards on top of his throwing rating, and AI_BAD_READ of the time he
    picks a receiver who isn't the best one. */
-const AI_LEAD = [.3, 1.3], AI_MISS = D => 4.5 + .28 * D, AI_BAD_READ = .22;
+const AI_LEAD = [.45, 1.2], AI_MISS = D => 2.5 + .16 * D, AI_BAD_READ = .12;   // settled between "perfect" and "throws it anywhere" (user said the wilder setting was too much)
 /* He also doesn't see the whole field (user: "they always know the perfect person to pass to"): each time he looks up he
    only considers AI_LOOKS of his four teammates, picked at random, and AI_FORCE of the time he throws to the best of
    those even when that man is covered. */
-const AI_LOOKS = 2, AI_FORCE = .3;
+const AI_LOOKS = 3, AI_FORCE = .15;
 function aiThrow(side, dt){
   const h = M.disc.holder; if (!h || h.side !== side) return;
   M.think -= dt; if (M.think > 0 || teamOf(side)[h.i].slide) return;
@@ -2560,7 +2561,6 @@ function simRest(){
    the farther you pull the farther it goes (AIM_GAIN screen pixels of throw for each pixel of drag), up to the
    thrower's longest throw. The dotted arc and ring show where you're aiming and how far off it could land.
    There is nothing to do on defense: your team plays its zone on its own. */
-const AIM_HELP_R = 7, AIM_HELP = .5;
 const AIM_GAIN = 3, AIM_MIN = 9;                                      // 3: the longest throw in the game (70 yd) is a drag of about 150 px, most of the way from the thrower to the edge of the screen (it was 5: far too twitchy on a phone)
 function canvasPt(ev){ const r = cv.getBoundingClientRect(); return { x:(ev.clientX - r.left) / r.width * CW, y:(ev.clientY - r.top) / r.height * CH }; }
 function aimTarget(){
@@ -2570,37 +2570,8 @@ function aimTarget(){
   let wx = -dx * AIM_GAIN / PXF, wy = -dy * AIM_GAIN / PYF;           // opposite the drag, in yards
   const D = Math.hypot(wx, wy), R = maxRange(h.p), k = D > R ? R / D : 1;
   wx *= k; wy *= k;
-  const T = { x:h.x + wx, y:h.y + wy, D:Math.min(D, R), max:D >= R, to:-1 };
-  // aim help: if the spot you're aiming at is within AIM_HELP_R yards of where a teammate is running to, the throw
-  // bends AIM_HELP of the way to him, and he's marked so you can see who it's for. Aim somewhere empty and it goes there.
-  let bd = AIM_HELP_R;
-  M.our.forEach((m, i) => {
-    if (m === h) return;
-    const lead = flightTime(dist(h, m), h.p.str) * .8, L = { x:m.x + (m.vx || 0) * lead, y:m.y + (m.vy || 0) * lead }, dd = dist(L, T);
-    if (dd < bd) { bd = dd; T.to = i; T.lead = L; }
-  });
-  if (T.to >= 0) { T.x = lerp(T.x, T.lead.x, AIM_HELP); T.y = lerp(T.y, T.lead.y, AIM_HELP); T.D = Math.min(R, dist(h, T)); }
-  return T;
+  return { x:h.x + wx, y:h.y + wy, D:Math.min(D, R), max:D >= R };   // exactly where you aim: no aim help (the user had it taken out)
 }
-cv.addEventListener('pointerdown', ev => {
-  if (!M || paused) return;
-  const pt = canvasPt(ev);
-  if (M.off === 'us' && !M.auto && M.phase === 'live' && holderEnt()) {
-    ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch {}
-    M.aim = { x0:pt.x, y0:pt.y, cx:pt.x, cy:pt.y, id:ev.pointerId };
-  }
-});
-cv.addEventListener('pointermove', ev => { if (M && M.aim && ev.pointerId === M.aim.id) { const pt = canvasPt(ev); M.aim.cx = pt.x; M.aim.cy = pt.y; } });
-const aimUp = ev => {
-  if (!M || !M.aim || ev.pointerId !== M.aim.id) return;
-  const T = ev.type === 'pointercancel' ? null : aimTarget(), h = holderEnt();
-  M.aim = null;
-  if (T && h && !h.slide && M.phase === 'live' && M.off === 'us' && !paused) throwDisc('us', h, T, { user:true });
-};
-cv.addEventListener('pointerup', aimUp); cv.addEventListener('pointercancel', aimUp);
-$('#pauseBtn').addEventListener('click', () => { if (!M) return; paused = true; M.aim = null; speedSheet(true); });
-
-/* ---- draw ---- */
 function drawAim(){
   const T = aimTarget(), h = holderEnt(); if (!T || !h) return;
   const hh = clamp(T.D * .06 - .3, 0, 4.6), n = Math.max(4, Math.round(T.D / 3.5));
@@ -2609,7 +2580,6 @@ function drawAim(){
     ctx.fillStyle = 'rgba(10,50,20,.35)'; ctx.fillRect(Math.round(sx(x)), Math.round(sy(y)), 2, 1);
     ctx.fillStyle = T.max ? '#ffd23f' : '#ffffff'; ctx.fillRect(Math.round(sx(x)), Math.round(sy(y, z)), 2, 2);
   }
-  if (T.to >= 0) { const m = M.our[T.to], mx = Math.round(sx(m.x)), my = Math.round(sy(m.y)); ctx.fillStyle = '#ffd23f'; ctx.fillRect(mx - 4, my + 1, 9, 1); ctx.fillRect(mx - 4, my - 1, 1, 2); ctx.fillRect(mx + 4, my - 1, 1, 2); }   // the man it's bending toward
   // where it's aimed, and the ring it could land anywhere inside
   const X = Math.round(sx(T.x)), Y = Math.round(sy(T.y)), er = errAt(h.p, T.D);
   ctx.fillStyle = 'rgba(255,255,255,.8)';
