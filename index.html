@@ -501,10 +501,10 @@ const FAC = {
   marketing:{ name:'Marketing', short:lv => step(lv, v => '+' + Math.round((v - 1) * MKT_WIN * 100) + '%') + ' per win', desc:lv => `Wins bring more fans and losses cost fewer (${Math.round((lv - 1) * MKT_LOSS * 100)}% fewer now, 10% more each level).` },
   sponsor:{ name:'Sponsoring', short:lv => step(lv, v => '$' + sponsorPer(v)) + ' a fan', desc:lv => 'Sponsors pay this for every fan in the building, at your games and on the road.' },
 };
-// what each upgrade costs, $M: three upgrades each (levels 1-4). All twelve come to about $2M (Marketing and Sponsoring are the user's prices); the aim (user) is to
+// what each upgrade costs, $M: three upgrades each (levels 1-4). All twelve come to about $1.4M (Arena, Marketing and Sponsoring are the user's prices); the aim (user) is to
 // have everything at level 4 around a good manager's third season, or a struggling one's fifth.
 const FAC_PRICE = {
-  arena:[.08, .28, .7],
+  arena:[.075, .125, .2],                                             // the user's prices
   amenities:[.025, .08, .28],
   marketing:[.015, .06, .125],
   sponsor:[.03, .125, .25],
