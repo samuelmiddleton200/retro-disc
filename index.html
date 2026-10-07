@@ -1467,9 +1467,10 @@ $('#ui').addEventListener('click', ev => {
     const ng = nextGameInfo();
     kitSel = { us:{ ...(G.kit || { j:'home', s:'home' }) }, them:ng.home ? { j:'away', s:'away' } : { j:'home', s:'home' } };
     if (!ng.home && kitSel.us.j === 'home') kitSel.us = { j:'away', s:'away' };
+    for (const part of ['j', 's']) if (kitSel.them[part] === kitSel.us[part]) kitSel.them[part] = (ng.home ? ['away', 'alt', 'home'] : ['home', 'alt', 'away']).find(v => v !== kitSel.us[part]);   // start them in something different from ours
     screen = 'kit'; render();
   }
-  else if (act === 'tipoff') { G.kit = { ...kitSel.us }; save(); screen = 'hub'; startMatch(); }
+  else if (act === 'tipoff') { if (kitClash()) { toast(`Both teams can't wear the same ${kitClash()}.`); return; } G.kit = { ...kitSel.us }; save(); screen = 'hub'; startMatch(); }
   else if (act === 'resume') { if (G.live && G.live.ks) kitSel = G.live.ks; screen = 'hub'; startMatch(); }
   else if (act === 'sim') { if (!savedLive()) simMatch(); }         // a saved game has to be finished, not simmed over
   else if (act === 'champOk') { G.last.celebrated = true; save(); render(); }
@@ -1560,6 +1561,9 @@ function previewImg(team, k, num){
   return c.toDataURL();
 }
 let kitSel = null;
+// The two teams may not wear the same jersey choice or the same shorts choice (user): home / away / alt must differ for
+// each part, so us alt + alt against them home + away is fine, and so is us alt + home against them home + alt.
+const kitClash = () => { const j = kitSel.us.j === kitSel.them.j, sh = kitSel.us.s === kitSel.them.s; return j && sh ? 'jersey and shorts' : j ? 'jersey' : sh ? 'shorts' : ''; };
 function kitHTML(){
   const ng = nextGameInfo(), t = userTeam(), o = ng.opp;
   const side = (who, team, k) => `<div class="panel kitp">
@@ -1570,7 +1574,7 @@ function kitHTML(){
     </div>`;
   return `${topBar('Uniforms', `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
     <div class="hub">${side('us', t, kitSel.us)}${side('them', o, kitSel.them)}</div>
-    <div class="row" style="margin-top:10px"><div class="muted grow" style="font-size:13px">${ng.home ? 'Home game' : `Away at ${esc(o.city)}`}. Pick both teams' looks, then tip off.</div><button class="btn go" data-a="tipoff">Tip off</button></div>`;
+    <div class="row" style="margin-top:10px"><div class="${kitClash() ? 'bad' : 'muted'} grow" style="font-size:13px">${kitClash() ? `Both teams can't wear the same ${kitClash()}. Change one of them.` : `${ng.home ? 'Home game' : `Away at ${esc(o.city)}`}. Pick both teams' looks, then throw off.`}</div><button class="btn go" data-a="tipoff" ${kitClash() ? 'disabled' : ''}>Throw off</button></div>`;
 }
 
 /* ============================ ENGINE ============================ */
