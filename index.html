@@ -174,6 +174,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .pp .face .bot{padding:6px;border-top:3px solid var(--white);text-align:center}
 .rt{display:grid;grid-template-columns:92px minmax(0,1fr) 40px auto;align-items:center;gap:8px;margin-bottom:8px}
 .rt .nm{font-family:var(--px);font-size:12px}
+.posdesc{font-size:13px;line-height:1.25;color:#cfe0ff}.posdesc b{color:#fff}
 .segs{display:grid;grid-template-columns:repeat(10,1fr);gap:2px}
 .segs i{height:14px;background:var(--navy);border-radius:1px}
 .segs i.on{background:var(--yellow)}
@@ -457,6 +458,14 @@ const AI_TEAMS = [['Portside','Pilots'],['Ridgeview','Rams'],['Lakeshore','Lynx'
      DP deep      sprints down the field for the long throws */
 const POS = ['HN','PO','CT','WG','DP'];
 const POS_NAME = { HN:'Handler', PO:'Popper', CT:'Cutter', WG:'Wing', DP:'Deep' };
+// what each position does, shown on the player page beside the Release button
+const POS_DESC = {
+  HN:'The quarterback: your best thrower and catcher. Stays near or behind the disc and runs the play.',
+  PO:'Plays close to the handler for quick give-and-go passes.',
+  CT:'The wide receiver: sprints into open space downfield to gain yards.',
+  WG:'Finds the openings at middle distance along the sidelines.',
+  DP:'Sprints down the field for the long throws and the end-zone catches.',
+};
 // The league (user's list): 20 clubs in four divisions of five. [id, city, name, division, main color, second color]
 const DIVS = [['E', 'East'], ['C', 'Central'], ['S', 'South'], ['W', 'West']];
 const DIV_NAME = Object.fromEntries(DIVS);
@@ -1207,7 +1216,7 @@ function playerHTML(){
           <tbody><tr><td>Season</td>${statLine(p.s)}</tr><tr><td>Career</td>${statLine(p.c)}</tr></tbody></table>
           <div class="muted" style="font-size:11px;margin-top:3px">Totals. CMP% is his catches out of the throws meant for him; TO is his throws the other team caught.</div>
         </div>
-        <div class="row" style="margin-top:10px"><button class="btn red sm" data-a="release">Release (costs ${money(p.sal * p.yrs * .5)})</button></div>
+        <div class="row" style="margin-top:10px;align-items:center"><button class="btn red sm" data-a="release" style="flex:none">Release (costs ${money(p.sal * p.yrs * .5)})</button><div class="posdesc grow"><b>${p.pos} = ${POS_NAME[p.pos]}.</b> ${POS_DESC[p.pos]}</div></div>
       </div>
     </div>`;
 }
