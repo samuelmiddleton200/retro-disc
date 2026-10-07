@@ -1597,8 +1597,13 @@ const FL = 110, FW = 40, EZ = 20, GOAL_L = EZ, GOAL_R = FL - EZ;
 const WORLD_W = Math.ceil(X0 * 2 + FL * PXF);
 const cv = $('#court'), ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
 const courtCv = document.createElement('canvas'); courtCv.width = WORLD_W; courtCv.height = CH;
-let cam = 0;
-const sx = x => X0 + x * PXF - cam, sy = (y, z = 0) => Y0 + y * PYF - z * PZF;
+/* The camera: zoomed in a third closer than the whole-height view (ZOOM), so about 42 yards of field show across the
+   screen and the view also slides up and down. It pulls back, as far as ZOOM_OUT, whenever that's needed to keep a
+   throw's whole distance on screen: while you aim a long one, and while a long one is in the air.
+   The canvas has SS real pixels per field pixel; SS x ZOOM / 2 is a whole number (4) so sprite pixels stay square. */
+const SS = 6, ZOOM = 4 / 3, ZOOM_OUT = .72;
+let cam = 0, camY = 0, zoom = ZOOM;
+const sx = x => X0 + x * PXF - cam, sy = (y, z = 0) => Y0 + y * PYF - z * PZF - camY;
 const FONT = {
   'A':['.#.','#.#','###','#.#','#.#'],
   'B':['##.','#.#','##.','#.#','##.'],
@@ -2078,7 +2083,7 @@ function fit(){
   const gs = getComputedStyle($('#game')), aw = innerWidth - parseFloat(gs.paddingLeft) - parseFloat(gs.paddingRight);   // same width as the menus
   const ah = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-h')) || innerHeight;   // the phone app measures the real screen (see the site wrapper)
   CW = clamp(Math.round(CH * aw / ah), 320, Math.min(420, WORLD_W));
-  if (cv.width !== CW * 2) { cv.width = CW * 2; cv.height = CH * 2; }
+  if (cv.width !== CW * SS) { cv.width = CW * SS; cv.height = CH * SS; }
   const s = Math.min(aw / CW, ah / CH);
   cv.style.width = Math.floor(CW * s) + 'px'; cv.style.height = Math.floor(CH * s) + 'px';
 }
@@ -2540,7 +2545,7 @@ cv.addEventListener('pointerdown', ev => {
     M.aim = { x0:pt.x, y0:pt.y, cx:pt.x, cy:pt.y, id:ev.pointerId };
   } else if (M.off === 'them' && ['live', 'air', 'loose', 'pull'].includes(M.phase)) {
     let best = -1, bd = 16;
-    M.our.forEach((e, i) => { const d = Math.hypot(sx(e.x) - pt.x, sy(e.y) - 6 - pt.y); if (d < bd) { bd = d; best = i; } });
+    M.our.forEach((e, i) => { const d = Math.hypot(sx(e.x) - pt.x / zoom, sy(e.y) - 6 - pt.y / zoom) * zoom; if (d < bd) { bd = d; best = i; } });   // the tap is in screen pixels, the players in zoomed ones
     if (best >= 0) { M.ctrl = best; M.our[best].manual = 0; }
   }
 });
@@ -2587,17 +2592,28 @@ function drawAim(){
 }
 function draw(){
   if (!M) return;
-  ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.imageSmoothingEnabled = false;
-  const D = M.disc, T = aimTarget(), h = holderEnt();
-  // the thrower stays near the middle; while you aim the view slides toward where you're aiming, and it follows the disc in the air
-  let focus = D.x + (h ? dirOf(M.off) * 5 : 0);
-  if (T && h) focus = clamp((h.x + T.x) / 2, h.x - (CW / 2 - 34) / PXF, h.x + (CW / 2 - 34) / PXF);
-  const target = clamp(X0 + focus * PXF - CW / 2, 0, WORLD_W - CW);
-  cam = lerp(cam, target, T ? .1 : .12);
-  if (M.shake > 0) { const a = M.shake / .2; ctx.fillStyle = '#0b1433'; ctx.fillRect(0, 0, CW, CH); ctx.translate(Math.round((Math.random() - .5) * 3 * a), Math.round((Math.random() - .5) * 2 * a)); }
-  ctx.drawImage(courtCv, Math.round(cam), 0, CW, CH, 0, 0, CW, CH);
-  cam = Math.round(cam * 100) / 100;
-  if (M.pop > 0) for (let i = 0; i < 5; i++) { const fx = Math.floor(Math.random() * CW), fy = 3 + Math.floor(Math.random() * (Y0 - 22)); ctx.fillStyle = '#ffffff'; ctx.fillRect(fx, fy - 1, 1, 3); ctx.fillRect(fx - 1, fy, 3, 1); }
+  const D = M.disc, T = aimTarget(), h = holderEnt(), F = D.fl;
+  // what has to be on screen: the thrower and where he's aiming, or the disc and where it's coming down
+  const a = T && h ? h : D, b = T && h ? T : F ? F.land : null;
+  let want = ZOOM;
+  if (b) {
+    const spanX = Math.abs(b.x - a.x) * PXF + 70, spanY = Math.abs(b.y - a.y) * PYF + 56;   // with room around both ends
+    want = clamp(Math.min(ZOOM, CW / spanX, CH / spanY), ZOOM_OUT, ZOOM);
+  }
+  zoom = lerp(zoom, want, want < zoom ? .14 : .06);                    // out quickly, back in gently
+  if (Math.abs(zoom - want) < .002) zoom = want;
+  const VW = CW / zoom, VH = CH / zoom;
+  // the thrower stays near the middle; while you aim, and while it flies, the view centers between the two ends
+  const fx = b ? (a.x + b.x) / 2 : D.x + (h ? dirOf(M.off) * 4 : 0), fy = b ? (a.y + b.y) / 2 : D.y;
+  const tx = VW >= WORLD_W ? (WORLD_W - VW) / 2 : clamp(X0 + fx * PXF - VW / 2, 0, WORLD_W - VW);
+  const ty = VH >= CH ? (CH - VH) / 2 : clamp(Y0 + fy * PYF - 10 - VH * .58, 0, CH - VH);   // a little low of center, so the scoreboard covers less of the play
+  cam = lerp(cam, tx, .12); camY = lerp(camY, ty, .12);
+  cam = Math.round(cam * 100) / 100; camY = Math.round(camY * 100) / 100;
+  ctx.setTransform(SS * zoom, 0, 0, SS * zoom, 0, 0); ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#16204a'; ctx.fillRect(0, 0, VW, VH / 2); ctx.fillStyle = '#2f7d3a'; ctx.fillRect(0, VH / 2, VW, VH / 2 + 1);   // beyond the stands and the grass when pulled right back
+  if (M.shake > 0) { const k = M.shake / .2; ctx.translate(Math.round((Math.random() - .5) * 3 * k), Math.round((Math.random() - .5) * 2 * k)); }
+  ctx.drawImage(courtCv, 0, 0, WORLD_W, CH, -cam, -camY, WORLD_W, CH);
+  if (M.pop > 0) for (let i = 0; i < 5; i++) { const px = Math.floor(Math.random() * VW), py = 3 + Math.floor(Math.random() * Math.max(4, Y0 - 22 - camY)); ctx.fillStyle = '#ffffff'; ctx.fillRect(px, py - 1, 1, 3); ctx.fillRect(px - 1, py, 3, 1); }
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   const ents = [
     ...M.our.map((e, i) => ({ y:e.y, f:() => drawPlayer(e, M.uni.us, play && !M.auto && ((M.off === 'us' && h === e) || (M.off === 'them' && i === M.ctrl)) ? '#ffd23f' : null) })),
