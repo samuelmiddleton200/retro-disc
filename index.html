@@ -2154,8 +2154,7 @@ function hud(){
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   $('#pU').className = 'poss' + (play && M.off === 'us' ? ' on' : ''); $('#pO').className = 'poss' + (play && M.off === 'them' ? ' on' : '');
   $('#shc').textContent = M.phase === 'live' ? Math.min(STALL, Math.floor(M.stall) + 1) : '';
-  const hint = M.auto ? '' : M.phase === 'kick' ? 'Your pull: drag back anywhere and let go to throw off' : !play ? '' : M.off === 'us' ? 'Drag back anywhere and let go to throw' : 'Their disc: your defense is on it';
-  if (hint !== M.hint) { M.hint = hint; tip(hint); }
+  // no hint line during play (the user asked for it to go)
 }
 function banner(text, small, ms = 1000, bigSub = false){
   const b = $('#banner'); b.innerHTML = esc(text) + (small ? `<small${bigSub ? ' class="big"' : ''}>${esc(small)}</small>` : ''); b.hidden = false;
