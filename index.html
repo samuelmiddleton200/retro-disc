@@ -2283,10 +2283,10 @@ function updateDefense(side, dt){
    That is the miss at the thrower's full distance; shorter throws miss in proportion (a quarter of it at point blank). */
 const STALL = 10;                                                     // real seconds to throw it
 const STOP_TIME = .32;                                                // seconds a catcher takes to pull up
-/* Height counts (user): a disc can only be caught while it is between LOW_Z (0.3) and REACH_Z (3) yards off the ground.
+/* Height counts (user): a disc can only be caught while it is between LOW_Z (0.3) and REACH_Z (2.5) yards off the ground.
    Higher than that it sails over whoever is under it; lower than that it is on its way into the grass. A throw leaves
-   and arrives at THROW_Z, chest height, and long ones climb well over 3 yards in between. */
-const ARRIVE = .35, LOW_Z = .3, REACH_Z = 3, THROW_Z = 1.5, CATCH_R = 2, DEF_R = 1.6, CLEAN_R = 1.2, LIVE_AFTER = 3.5;
+   and arrives at THROW_Z, chest height, and long ones climb well over that in between. */
+const ARRIVE = .35, LOW_Z = .3, REACH_Z = 2.5, THROW_Z = 1.5, CATCH_R = 2, DEF_R = 1.6, CLEAN_R = 1.2, LIVE_AFTER = 3.5;
 const maxRange = p => 35 + (clamp(p.str, 1, 10) - 1) * 35 / 9;
 const maxErr = p => 7.5 - (clamp(p.thr, 1, 10) - 1) * .5;            // 7.5 yards at 1/10, half a yard less per point, 3 at 10/10 (user)
 const errAt = (p, D) => maxErr(p) * (.25 + .75 * clamp(D / maxRange(p), 0, 1));
