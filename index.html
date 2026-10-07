@@ -283,10 +283,6 @@ input[type=text]{width:100%;background:var(--navy);border:3px solid var(--white)
 .tpick .tn{font-size:11px;line-height:1.15}.tpick .tn b{font-family:var(--px);font-size:10px}
 .shootbtn{position:absolute;right:12px;bottom:12px;width:138px;height:138px;border-radius:50%;font-size:20px;padding:0;touch-action:none;-webkit-touch-callout:none;z-index:4}
 .shootbtn:active{transform:translateY(3px)}
-/* the defender's joystick: bottom left, clear of the notch */
-.joy{position:absolute;left:calc(14px + env(safe-area-inset-left) * .7);bottom:calc(14px + env(safe-area-inset-bottom) * .5);width:var(--joy,120px);height:var(--joy,120px);border-radius:50%;border:3px solid rgba(255,255,255,.85);background:rgba(11,20,51,.45);touch-action:none;-webkit-touch-callout:none;z-index:4;display:grid;place-items:center}
-.joy[hidden]{display:none}
-.joy i{width:44%;height:44%;border-radius:50%;background:var(--yellow);border:3px solid #fff;box-shadow:0 3px 0 rgba(0,0,0,.45);pointer-events:none}
 .shotbox:empty{display:none}
 .shootbtn.dunk{background:#ff5a3c;color:#fff;border-color:#fff}
 .tip{position:absolute;left:50%;transform:translateX(-50%);bottom:4px;font-family:var(--px);font-size:10px;text-align:center;color:#fff;text-shadow:0 2px 0 #000;pointer-events:none;max-width:60%}
@@ -383,7 +379,6 @@ input[type=text]{width:100%;background:var(--navy);border:3px solid var(--white)
   /* in the game: a thumb-sized SHOOT button instead of the big desktop one */
   :root{--sb:76px;--mw:10px;--mh:100px}                               /* phone: small button, slim meter above it */
   .shootbtn{font-size:12px;border-width:2px;box-shadow:0 3px 0 var(--navy)}
-  :root{--joy:84px}
   .meter .pct{font-size:10px}
 }
 
@@ -403,7 +398,6 @@ input[type=text]{width:100%;background:var(--navy);border:3px solid var(--white)
       <div class="tm r" id="tmO"><span class="poss" id="pO"></span><span class="sc num" id="sO">0</span><span class="ab" id="aO"></span></div>
     </div><div class="shotbox num" id="shc">24</div></div>
     <button class="btn sm gbtn" id="pauseBtn" aria-label="Pause">II</button>
-    <div class="joy" id="joy" hidden aria-label="Move your defender"><i id="joyNub"></i></div>
     <div class="banner" id="banner" hidden></div>
     <div class="stats" id="stats" hidden></div>
     <div class="tip" id="tip"></div>
@@ -2108,7 +2102,7 @@ function startMatch(){
   const ent = (p, face) => ({ p, x:55, y:20, z:0, tx:55, ty:20, vx:0, vy:0, anim:0, moving:false, face, run:0, lagT:0, lx:55, ly:20, cutWait:0, inCut:false, tried:false, dPrev:1e9 });
   M = { ...ng, t, uni:{ us:uniColors(t, ks.us), them:uniColors(ng.opp, ks.them) }, id:uid(), us:0, them:0, box:{}, pbox:{}, st:{ us:blank(), them:blank() }, to:gameTo(), half:false, phase:'idle', flash:0, shake:0, pop:0,
     our:POS.map(pos => ent(G.roster[pos], 1)), th:ng.opp.players.map(p => ent(p, -1)),
-    disc:{ x:55, y:20, z:0, holder:null, fl:null }, off:'us', stall:0, ctrl:2, aim:null, think:1, first:Math.random() < .5 ? 'us' : 'them', chase:null };
+    disc:{ x:55, y:20, z:0, holder:null, fl:null }, off:'us', stall:0, aim:null, think:1, first:Math.random() < .5 ? 'us' : 'them', chase:null };
   // the stands fill to this game's attendance: yours from fans and ticket price, theirs from their record
   const oppGp = ng.opp.w + ng.opp.l, oppFill = clamp(.55 + (oppGp ? ng.opp.w / oppGp : .5) * .4, .4, .98);
   const po = ng.kind === 'playoffs';                                // playoff atmosphere: the look only, the gate still follows the fans
@@ -2160,9 +2154,7 @@ function hud(){
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   $('#pU').className = 'poss' + (play && M.off === 'us' ? ' on' : ''); $('#pO').className = 'poss' + (play && M.off === 'them' ? ' on' : '');
   $('#shc').textContent = M.phase === 'live' ? Math.min(STALL, Math.floor(M.stall) + 1) : '';
-  const defending = USER_DEFENDS && play && M.off === 'them' && !M.auto;
-  if (defending !== M.joyShown) { M.joyShown = defending; $('#joy').hidden = !defending; if (!defending) joyReset(); }
-  const hint = !play || M.auto ? '' : M.off === 'us' ? 'Drag back anywhere and let go to throw' : USER_DEFENDS ? 'Stick: run your defender · tap a teammate to switch' : 'Their disc: your defense is on it';
+  const hint = !play || M.auto ? '' : M.off === 'us' ? 'Drag back anywhere and let go to throw' : 'Their disc: your defense is on it';
   if (hint !== M.hint) { M.hint = hint; tip(hint); }
 }
 function banner(text, small, ms = 1000, bigSub = false){
@@ -2183,8 +2175,9 @@ const inGoal = (p, side) => inField(p) && (side === 'us' ? p.x >= GOAL_R : p.x <
 /* ---- movement (user's numbers) ----
    A 10/10 speed covers the 70 yards in 10 seconds, a 1/10 in 12. Stamina: every point under 10 adds 0.005 s to each
    yard, so a 1/10 stamina runs the 70 in about 13 s instead of 10. Players start every point fresh and that
-   slowdown builds up over the first TIRE_YARDS they run in it (both teams). */
-const PACE_FAST = 10 / 70, PACE_SLOW = 12 / 70, STA_PACE = .005, TIRE_YARDS = 60;
+   slowdown builds up over the TIRE_YARDS they run in it (both teams). It was 60 yards, which is the first few
+   seconds of a point: a low-stamina team then played the whole game a third slower and lost every race. */
+const PACE_FAST = 10 / 70, PACE_SLOW = 12 / 70, STA_PACE = .005, TIRE_YARDS = 300;
 const paceOf = e => lerp(PACE_SLOW, PACE_FAST, (clamp(e.p.spd, 1, 10) - 1) / 9) + STA_PACE * (10 - clamp(e.p.sta, 1, 10)) * clamp((e.run || 0) / TIRE_YARDS, 0, 1);
 const speedOf = e => 1 / paceOf(e);                                   // yards per second
 function moveTo(e, tx, ty, sp, dt){
@@ -2216,10 +2209,10 @@ const ROLE_SPOT = [
 function setCut(e, i, side){
   const R = refPoint(), d = dirOf(side), mates = teamOf(side), foes = teamOf(otherSide(side));
   let best = null;
-  for (let n = 0; n < 7; n++) {
+  for (let n = 0; n < 12; n++) {
     const c = ROLE_SPOT[Math.min(i, 4)](R, e), p = { x:clamp(R.x + d * c.f, 3, FL - 3), y:clamp(c.y, 2, FW - 2) };
     const open = Math.min(...foes.map(f => dist(f, p))), crowd = Math.min(...mates.map(m => m === e ? 99 : Math.hypot((m.tx ?? m.x) - p.x, (m.ty ?? m.y) - p.y)));
-    const sc = Math.min(open, 12) + Math.min(crowd, 9) * .6 + rnd(0, 2);   // open grass first, then away from his own teammates
+    const sc = Math.min(open, 16) * 1.3 + Math.min(crowd, 9) * .5 + rnd(0, 1.5);   // open grass first, then away from his own teammates
     if (!best || sc > best.sc) best = { sc, p };
   }
   e.inCut = !e.inCut; e.tx = best.p.x; e.ty = best.p.y; e.cutWait = rnd(.05, .55);
@@ -2239,60 +2232,44 @@ function updateOffense(side, dt){
 }
 /* ---- defense: a zone, not man to man (user, 2026-10-07: sticking to every player was too hard to beat) ----
    Each defender owns a patch of field measured from the disc, not a man:
-     0  the mark: runs to the thrower and stands 2.4 yards off him, downfield side
-     1  short middle: about 8 yards past the disc (the poppers' space)
-     2  middle: about 19 yards past it
-     3  the wing: 15 yards past it, on whichever sideline their wing is working
+     0  the mark: runs to the thrower and stands 3 yards off him, downfield side
+     1  short middle: about 10 yards past the disc (the poppers' space)
+     2  middle: about 22 yards past it
+     3  the wing: 17 yards past it, on whichever sideline their wing is working
      4  deep: at least 26 yards past it, and always a few yards behind their deepest man
-   Inside his patch a defender only shades ZONE_TIGHT of the way toward the nearest attacker, so cutters come open by a
-   few yards the way players find space in soccer. He re-reads the play every DEF_LAG seconds.
+   Inside his patch a defender only leans ZONE_TIGHT of the way toward an attacker who comes within ZONE_NEAR yards
+   of his spot: he never follows a man, so cutters come well open, the way receivers do against zone coverage in
+   football. He re-reads the play every DEF_LAG seconds.
    A throw catches the defense looking: the offense goes for it at once, the defense takes DEF_REACT seconds to notice,
-   and then the defender nearest to where it's coming down breaks on it.
-   (If USER_DEFENDS is ever turned back on, the defender you control follows the joystick instead.) */
-const DEF_LAG = .45, DEF_REACT = .45, ZONE_TIGHT = .45;
-const USER_DEFENDS = false;                                           // the user asked not to play defense (2026-10-07): your team defends on its own; the joystick code stays for if that changes
+   and then the defender nearest to where it's coming down breaks on it, at CHASE_SPEED of his pace (he is reading it
+   late; the receiver knew where it was going).
+   You don't play defense (user, 2026-10-07): your five run this zone on their own. */
+const DEF_LAG = .5, DEF_REACT = .6, ZONE_TIGHT = .15, ZONE_NEAR = 8, CHASE_SPEED = .9;   // loose on purpose (user: "like football, someone can get 10 yards open")
 function zoneSpot(i, off){
   const F = M.disc.fl, h = holderEnt(), R = F && !F.pull ? (F.t > DEF_REACT ? F.target : F.from) : h || (F ? F.target : M.disc);
   const d = dirOf(off), men = teamOf(off), fwd = f => clamp(R.x + d * f, 1, FL - 1);
-  if (i === 0) return { x:fwd(2.4), y:R.y };
+  if (i === 0) return { x:fwd(3), y:R.y };
   let base;
-  if (i === 1) base = { x:fwd(8), y:lerp(FW / 2, R.y, .7) };
-  else if (i === 2) base = { x:fwd(19), y:lerp(FW / 2, R.y, .4) };
-  else if (i === 3) base = { x:fwd(15), y:men[3] && men[3].y < FW / 2 ? 7 : FW - 7 };
+  if (i === 1) base = { x:fwd(10), y:lerp(FW / 2, R.y, .6) };
+  else if (i === 2) base = { x:fwd(22), y:lerp(FW / 2, R.y, .3) };
+  else if (i === 3) base = { x:fwd(17), y:men[3] && men[3].y < FW / 2 ? 8 : FW - 8 };
   else { const deepest = Math.max(...men.map(m => (m.x - R.x) * d)); base = { x:fwd(Math.max(26, deepest + 4)), y:lerp(FW / 2, men[4] ? men[4].y : FW / 2, .5) }; }
   // shade toward the nearest attacker in the patch (never the man with the disc), without leaving it
-  let near = null, nd = 13;
+  let near = null, nd = ZONE_NEAR;
   men.forEach(m => { if (m === h) return; const dd = dist(m, base); if (dd < nd) { nd = dd; near = m; } });
-  if (near) base = { x:lerp(base.x, near.x + d * 1.2, ZONE_TIGHT), y:lerp(base.y, near.y, ZONE_TIGHT) };
+  if (near) base = { x:lerp(base.x, near.x, ZONE_TIGHT), y:lerp(base.y, near.y, ZONE_TIGHT) };
   return { x:clamp(base.x, 1, FL - 1), y:clamp(base.y, 1, FW - 1) };
 }
 function updateDefense(side, dt){
   const arr = teamOf(side), off = otherSide(side), F = M.disc.fl;
   if (F && !F.pull && F.t > DEF_REACT && F.defChase == null) F.defChase = nearestIdx(arr, F.land);   // now they've seen it
   arr.forEach((e, i) => {
-    if (USER_DEFENDS && side === 'us' && !M.auto && i === M.ctrl && userMoves(e, dt)) return;
-    if (F && !F.pull && F.defChase === i) { moveTo(e, F.land.x, F.land.y, speedOf(e), dt); return; }
+    if (F && !F.pull && F.defChase === i) { moveTo(e, F.land.x, F.land.y, speedOf(e) * CHASE_SPEED, dt); return; }
     e.lagT -= dt;
     if (e.lagT <= 0) { e.lagT = DEF_LAG; const z = zoneSpot(i, off); e.lx = z.x; e.ly = z.y; }
     moveTo(e, e.lx, e.ly, speedOf(e) * .95, dt);
     if (!e.moving) e.face = -dirOf(off);
   });
-}
-// the joystick: your defender runs where you push it; for a moment after you let go he stays put, then marks again
-const joy = { x:0, y:0, on:false };
-function joyReset(){ joy.x = joy.y = 0; joy.on = false; const n = $('#joyNub'); if (n) n.style.transform = ''; }
-function userMoves(e, dt){
-  const m = Math.hypot(joy.x, joy.y);
-  if (m > .18) {
-    const sp = speedOf(e) * Math.min(1, m * 1.15), ox = e.x, oy = e.y;
-    e.x = clamp(e.x + joy.x / m * sp * dt, -2, FL + 2); e.y = clamp(e.y + joy.y / m * sp * dt, -2, FW + 2);
-    const s = Math.hypot(e.x - ox, e.y - oy); e.run = (e.run || 0) + s; e.vx = (e.x - ox) / dt; e.vy = (e.y - oy) / dt;
-    if (Math.abs(joy.x) > .2) e.face = joy.x > 0 ? 1 : -1;
-    e.moving = true; e.anim += dt * sp * 2.3; e.manual = .7; e.lagT = 0;
-    return true;
-  }
-  if ((e.manual || 0) > 0) { e.manual -= dt; e.moving = false; e.vx = e.vy = 0; return true; }
-  return false;
 }
 
 /* ---- the disc (the heart of it) ----
@@ -2367,7 +2344,8 @@ function updateDisc(dt){
                  15% less if he has to lay out (more than 1.2 yd away), 10% less above his head, 7% less with a
                  defender on him (an open man rarely drops a soft one)
      a defender: (5% + 1.6% per catching point) within 1.6 yd, same speed rule, 30% less at full stretch or above
-                 his head; the one you're running yourself gets double. Anything he gets is an interception. */
+                 his head, and nearly half as likely when the receiver is right there too. Anything he gets is an
+                 interception. */
 function tryCatch({ e, side, i, dd }){
   const F = M.disc.fl, d = M.disc, own = side === F.side;
   e.tried = true;
@@ -2377,7 +2355,7 @@ function tryCatch({ e, side, i, dd }){
   else if (own) {
     const guarded = teamOf(otherSide(side)).some(o => dist(o, e) < 1.5);
     p = (.93 + .006 * e.p.cat) * sp * (far ? .85 : 1) * (high ? .9 : 1) * (guarded ? .93 : 1);
-  } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (USER_DEFENDS && side === 'us' && !M.auto && i === M.ctrl ? 2 : 1);
+  } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (teamOf(F.side).some(o => o !== F.thrower && dist(o, d) < 2.2) ? .55 : 1);   // a receiver right there shields it
   e.poseT = .4; if (far) e.dive = .5; else if (high) e.z = .8;
   if (Math.random() >= p) {
     if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).tgt++; turnover({ x:d.x, y:d.y }, otherSide(side), side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }
@@ -2403,7 +2381,7 @@ function tryCatch({ e, side, i, dd }){
   banner(side === 'us' ? 'INTERCEPTED!' : 'PICKED OFF', `${e.p.fn[0]}. ${e.p.ln}`, 1000);
   if (inGoal(e, side)) { goal(side, e, null); return; }               // caught in the end zone he attacks: that's a score
   if (!inField(e)) { d.holder = null; turnover({ x:e.x, y:e.y }, side, ''); return; }
-  M.phase = 'live'; M.stall = 0; M.think = rnd(1, 1.8); afterCatch(side); pickCtrl();
+  M.phase = 'live'; M.stall = 0; M.think = rnd(1, 1.8); afterCatch(side);
 }
 function afterCatch(side){ teamOf(side).forEach((e, i) => { if (!(M.disc.holder && M.disc.holder.i === i)) setCut(e, i, side); }); }
 // it hit the grass: the other team's disc where it landed (or where it went out)
@@ -2424,17 +2402,12 @@ function turnover(spot, side, text){
   M.pick = nearestIdx(teamOf(side), d);
   teamOf(side).forEach((e, i) => { if (i !== M.pick) setCut(e, i, side); });
   if (text) banner(text, side === 'us' ? 'Your disc' : 'Their disc', 800);
-  pickCtrl(); hud();
+  hud();
 }
 function pickUp(side, i){
   const e = teamOf(side)[i];
   M.disc.holder = { side, i }; e.moving = false; e.vx = e.vy = 0; M.phase = 'live'; M.stall = 0; M.think = rnd(.9, 1.6);
   afterCatch(side); hud();
-}
-// when they have it: you start on the defender nearest the disc who isn't the mark
-function pickCtrl(){
-  if (M.off !== 'them') return;
-  const i = nearestIdx(M.our, M.disc, 0); if (i >= 0) M.ctrl = i;   // slot 0 is the mark
 }
 function goal(side, e, thrower){
   if (side === 'us') { M.us++; M.box[e.p.id] = (M.box[e.p.id] || 0) + 1; if (thrower) pbFor(M.pbox, thrower.p).ast++; }
@@ -2459,7 +2432,7 @@ function startPull(receiving){
   M.off = receiving;
   M.pick = nearestIdx(R, M.disc.fl.target);
   R.forEach((e, i) => { if (i !== M.pick) setCut(e, i, receiving); });
-  pickCtrl(); hud();
+  hud();
 }
 /* ---- the computer's thrower ----
    He looks for a moment, then throws to the teammate who is most open and gains the most, leading him to where
@@ -2545,8 +2518,8 @@ function showStats(title, span, cta, onGo){
 function finishLive(id){
   if (!M || M.id !== id) return;
   const done = M; M = null;
-  cancelAnimationFrame(raf); closeSheet(); joyReset();
-  $('#game').hidden = true; $('#ui').hidden = false; $('#joy').hidden = true;
+  cancelAnimationFrame(raf); closeSheet();
+  $('#game').hidden = true; $('#ui').hidden = false;
   const opp = teamById(done.opp.id); if (opp) fakeBox(teamPlayers(opp), done.them);
   endMatch(done, done.us, done.them, done.box, done.pbox);
 }
@@ -2562,7 +2535,7 @@ function simRest(){
    Offense: press anywhere, drag back like a slingshot and let go. The throw goes the opposite way on the screen, and
    the farther you pull the farther it goes (AIM_GAIN screen pixels of throw for each pixel of drag), up to the
    thrower's longest throw. The dotted arc and ring show where you're aiming and how far off it could land.
-   Defense: the stick in the bottom left runs your defender; tap one of your players to take him over instead. */
+   There is nothing to do on defense: your team plays its zone on its own. */
 const AIM_GAIN = 3, AIM_MIN = 9;                                      // 3: the longest throw in the game (70 yd) is a drag of about 150 px, most of the way from the thrower to the edge of the screen (it was 5: far too twitchy on a phone)
 function canvasPt(ev){ const r = cv.getBoundingClientRect(); return { x:(ev.clientX - r.left) / r.width * CW, y:(ev.clientY - r.top) / r.height * CH }; }
 function aimTarget(){
@@ -2580,10 +2553,6 @@ cv.addEventListener('pointerdown', ev => {
   if (M.off === 'us' && !M.auto && M.phase === 'live' && holderEnt()) {
     ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch {}
     M.aim = { x0:pt.x, y0:pt.y, cx:pt.x, cy:pt.y, id:ev.pointerId };
-  } else if (USER_DEFENDS && M.off === 'them' && ['live', 'air', 'loose', 'pull'].includes(M.phase)) {
-    let best = -1, bd = 16;
-    M.our.forEach((e, i) => { const d = Math.hypot(sx(e.x) - pt.x / zoom, sy(e.y) - 6 - pt.y / zoom) * zoom; if (d < bd) { bd = d; best = i; } });   // the tap is in screen pixels, the players in zoomed ones
-    if (best >= 0) { M.ctrl = best; M.our[best].manual = 0; }
   }
 });
 cv.addEventListener('pointermove', ev => { if (M && M.aim && ev.pointerId === M.aim.id) { const pt = canvasPt(ev); M.aim.cx = pt.x; M.aim.cy = pt.y; } });
@@ -2594,22 +2563,7 @@ const aimUp = ev => {
   if (T && h && !h.slide && M.phase === 'live' && M.off === 'us' && !paused) throwDisc('us', h, T, { user:true });
 };
 cv.addEventListener('pointerup', aimUp); cv.addEventListener('pointercancel', aimUp);
-// the joystick
-(() => {
-  const el = $('#joy'), nub = $('#joyNub'); let id = null;
-  const set = ev => {
-    const r = el.getBoundingClientRect(), R = r.width / 2;
-    let x = (ev.clientX - (r.left + R)) / R, y = (ev.clientY - (r.top + R)) / R; const m = Math.hypot(x, y);
-    if (m > 1) { x /= m; y /= m; }
-    joy.x = x; joy.y = y; joy.on = true; nub.style.transform = `translate(${x * R * .6}px, ${y * R * .6}px)`;
-  };
-  el.addEventListener('pointerdown', ev => { ev.preventDefault(); id = ev.pointerId; try { el.setPointerCapture(id); } catch {} set(ev); });
-  el.addEventListener('pointermove', ev => { if (ev.pointerId === id) set(ev); });
-  const end = ev => { if (ev.pointerId === id) { id = null; joyReset(); } };
-  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
-  el.addEventListener('contextmenu', ev => ev.preventDefault());
-})();
-$('#pauseBtn').addEventListener('click', () => { if (!M) return; paused = true; M.aim = null; joyReset(); speedSheet(true); });
+$('#pauseBtn').addEventListener('click', () => { if (!M) return; paused = true; M.aim = null; speedSheet(true); });
 
 /* ---- draw ---- */
 function drawAim(){
@@ -2672,7 +2626,7 @@ function draw(){
   if (M.pop > 0) for (let i = 0; i < 5; i++) { const px = Math.floor(Math.random() * VW), py = 3 + Math.floor(Math.random() * Math.max(4, Y0 - 22 - camY)); ctx.fillStyle = '#ffffff'; ctx.fillRect(px, py - 1, 1, 3); ctx.fillRect(px - 1, py, 3, 1); }
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   const ents = [
-    ...M.our.map((e, i) => ({ y:e.y, f:() => drawPlayer(e, M.uni.us, play && !M.auto && ((M.off === 'us' && h === e) || (USER_DEFENDS && M.off === 'them' && i === M.ctrl)) ? '#ffd23f' : null) })),
+    ...M.our.map((e, i) => ({ y:e.y, f:() => drawPlayer(e, M.uni.us, play && !M.auto && M.off === 'us' && h === e ? '#ffd23f' : null) })),
     ...M.th.map(e => ({ y:e.y, f:() => drawPlayer(e, M.uni.them, null) })),
     { y:-2, f:() => { drawBench('us'); drawBench('them'); } },
     { y:D.y + (h ? .1 : 0), f:drawDisc },
