@@ -1,0 +1,2648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- no zooming; the game fills the screen -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- opened from the home screen: no Safari bars, black status bar -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<!-- black-translucent: the page always runs under the status bar area, so iOS has no bar-sized strip to
+     leave behind when the app opens sideways (the game already keeps clear of the notch itself) -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Retro Disc">
+<meta name="theme-color" content="#0b1433">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+  html,body{overscroll-behavior:none;touch-action:manipulation;-webkit-text-size-adjust:100%}   /* no bounce, no double-tap zoom */
+  /* like an app: the page itself never moves; long menus scroll inside the game area.
+     The page is pinned to the screen (position:fixed) so it cannot sit scrolled or pushed off to one side, and its
+     height comes from --app-h, the size the script below measures, because an iPhone opened sideways sometimes
+     hands the page a stale size or offset for a moment (the "whole screen shifted over" launch). */
+  html,body{position:fixed;left:0;top:0;width:100%;height:100%;height:var(--app-h,100%);overflow:hidden}
+  #ui{height:100%;height:100dvh;height:var(--app-h,100dvh);min-height:0 !important;overflow:hidden;overscroll-behavior:none}
+  #game{height:var(--app-h,100%);bottom:auto !important}
+  /* the stats list is the only screen allowed to scroll, and only up and down */
+  #ui[data-screen="leaders"]{overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+</style>
+<script>
+  // Launch guard for the shifted screen: measure the real screen, pin the page to it, put the page back at 0,0,
+  // and if the iPhone is still reporting a stale size make it measure again. Runs at launch, a few more times in
+  // the first seconds, and whenever the app comes back, rotates or resizes. It never reloads the app.
+  (function(){
+    var root = document.documentElement, nudges = 0, last = '';
+    var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var standalone = function(){ return navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches); };
+    var angle = function(){ var a = (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : window.orientation; return typeof a === 'number' ? Math.abs(a) % 180 : null; };
+    // what the screen really is: on an iPhone home-screen app that is the whole display, turned the way the phone is held
+    function real(){
+      var w = window.innerWidth, h = window.innerHeight, a = angle();
+      if (ios && standalone() && a !== null && screen.width && screen.height) {
+        var long = Math.max(screen.width, screen.height), short = Math.min(screen.width, screen.height);
+        var ew = a === 90 ? long : short, eh = a === 90 ? short : long;
+        // only a big gap is a stale size (the page still thinks the phone is the other way up); small gaps are real bars
+        if (Math.abs(w - ew) > 60 || Math.abs(h - eh) > 60) return { w:ew, h:eh, stale:true };
+      }
+      return { w:w, h:h, stale:false };
+    }
+    function settle(){
+      try {
+        var r = real(), vv = window.visualViewport;
+        root.style.setProperty('--app-h', r.h + 'px');
+        var moved = window.scrollX || window.scrollY || root.scrollTop || (document.body && document.body.scrollTop) || (vv && (vv.offsetTop || vv.offsetLeft || vv.pageTop || vv.pageLeft));
+        if (moved) { window.scrollTo(0, 0); root.scrollTop = 0; if (document.body) document.body.scrollTop = 0; }
+        if ((r.stale || moved) && nudges < 6) {                      // make the iPhone lay the page out again
+          nudges++;
+          var m = document.querySelector('meta[name=viewport]'), c = m && m.getAttribute('content');
+          if (m) { m.setAttribute('content', c + ', height=device-height'); setTimeout(function(){ m.setAttribute('content', c); }, 60); }
+        }
+        var key = r.w + 'x' + r.h + (r.stale ? 's' : '') + (moved ? 'm' : '');
+        if (key !== last) { last = key; setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 80); }   // the game re-fits its court
+      } catch (e) {}
+    }
+    try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) {}
+    settle();
+    [0, 60, 150, 300, 600, 1000, 1600, 2500, 4000].forEach(function(ms){ setTimeout(settle, ms); });
+    ['DOMContentLoaded', 'load', 'pageshow', 'resize', 'orientationchange', 'focus'].forEach(function(ev){ window.addEventListener(ev, function(){ settle(); setTimeout(settle, 250); setTimeout(settle, 700); }); });
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) { nudges = 0; settle(); setTimeout(settle, 250); setTimeout(settle, 700); } });
+    if (window.visualViewport) { visualViewport.addEventListener('resize', settle); visualViewport.addEventListener('scroll', settle); }
+  })();
+</script>
+<script>
+  // No surprise updates: the app never reloads itself. A new version (only when we publish one) shows the
+  // next time the app is closed and opened again, because the game loads fresh from the server at launch.
+  if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache:'none' }).catch(() => {}));
+</script>
+<title>Retro Disc</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Silkscreen:wght@400;700&family=Roboto+Mono:wght@500;700&display=swap">
+<style>
+:root{
+  --blue:#2f5fd8; --blue-d:#2149b4; --blue-dd:#17348a; --navy:#0f1f55;
+  --white:#ffffff; --yellow:#ffd23f; --yellow-d:#c99a12; --red:#e24b3b; --green:#44c45d; --gray:#4d525e; --gray-d:#383c46;
+  --px:"Silkscreen","Courier New",monospace;
+  --numf:"Roboto Mono",ui-monospace,Consolas,monospace;
+  --body:"Pixelify Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--blue);color:var(--white);height:100%}
+body{margin:0;font:15px/1.3 var(--body);overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+.px{font-family:var(--px)}
+#ui{max-width:980px;margin:0 auto;padding-inline:16px;padding-block:10px 16px;min-height:100%}
+
+/* --- chrome --- */
+.bar{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-bottom:10px}
+.box{border:3px solid var(--white);border-radius:6px;background:var(--blue-dd);padding:4px 10px;font-family:var(--px);font-weight:700;font-size:14px;white-space:nowrap}
+.title{font-family:var(--px);font-weight:700;font-size:clamp(18px,3.4vw,28px);text-align:center;text-transform:uppercase;letter-spacing:.02em;line-height:1.05;text-shadow:0 3px 0 var(--navy)}
+.title .st{color:var(--yellow);font-size:.7em;vertical-align:.12em;letter-spacing:0}
+.btn{font-family:var(--px);font-weight:700;text-transform:uppercase;border:3px solid var(--white);border-radius:6px;background:var(--blue-dd);padding:9px 14px;font-size:14px;letter-spacing:.03em;box-shadow:0 4px 0 var(--navy)}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--navy)}
+.btn.go{background:var(--yellow);color:#241a00;border-color:#fff3b8}
+.btn.red{background:var(--red)}
+.btn.green{background:var(--green);color:#082010}
+.btn.sm{padding:5px 9px;font-size:12px;border-width:2px}
+.btn:disabled{opacity:.4;pointer-events:none}
+.icon{width:40px;height:36px;padding:0;display:grid;place-items:center;font-size:18px}
+.panel{border:3px solid var(--white);border-radius:6px;background:var(--blue-d);padding:10px 12px}
+.label{font-family:var(--px);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#cfe0ff}
+.row{display:flex;align-items:center;gap:10px}
+.between{justify-content:space-between}
+.grow{flex:1;min-width:0}
+.stack{display:grid;gap:10px}
+.muted{color:#cfe0ff}
+.yellow{color:var(--yellow)} .good{color:#7dff95} .bad{color:#ffb3aa}
+.debt{color:#ff5e4f !important}                                                  /* cash below zero */
+/* numbers use a plain monospace: the pixel fonts' 5 reads as S and 0 as O */
+.num,.sal,.card .age{font-family:var(--numf);font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:0}
+.stars{color:var(--yellow);letter-spacing:1px;text-shadow:1px 1px 0 #6b4a00}
+.stars .off{color:#8c93a3;text-shadow:none}
+.stars .half{position:relative;display:inline-block;color:#8c93a3;text-shadow:none}
+.stars .half::before{content:'★';position:absolute;left:0;top:0;width:50%;overflow:hidden;color:var(--yellow);text-shadow:1px 1px 0 #6b4a00}
+
+/* --- hub --- */
+.hub{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px}
+.menu{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}
+.menu .btn{padding:14px 6px}
+.chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.chip{border:3px solid var(--white);border-radius:6px;background:var(--blue-dd);padding:5px 6px;text-align:center}
+.chip b{display:block;font-family:var(--px);font-size:14px}
+.vs{display:flex;align-items:center;justify-content:space-around;gap:6px;margin:6px 0 10px;text-align:center}
+.vs .t{display:grid;justify-items:center;gap:3px}
+.vs .n{font-family:var(--px);font-size:12px;text-transform:uppercase}
+.badge{width:46px;height:46px;border-radius:6px;display:grid;place-items:center;font-family:var(--px);font-weight:700;font-size:13px;border:3px solid;box-shadow:inset 0 -4px 0 rgba(0,0,0,.25)}
+.badge.sm{width:28px;height:28px;font-size:9px;border-width:2px}
+
+/* --- cards --- */
+.cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.card{border:3px solid var(--white);border-radius:6px;overflow:hidden;background:var(--gray);padding:0;text-align:center;box-shadow:0 4px 0 var(--navy);position:relative}
+.card:active{transform:translateY(2px)}
+.card .top{height:62px;position:relative;display:flex;align-items:flex-end;justify-content:center}
+.card .top img{width:56px;height:56px;image-rendering:pixelated}
+.card .pos{position:absolute;left:4px;top:3px;font-family:var(--px);font-weight:700;font-size:12px;text-shadow:1px 1px 0 rgba(0,0,0,.4)}
+.card .age{position:absolute;right:4px;top:4px;font-family:var(--px);font-size:10px;background:rgba(0,0,0,.3);border-radius:3px;padding:1px 3px}
+.card .bot{padding:4px 3px 5px;border-top:3px solid var(--white)}
+.card .nm{font-family:var(--px);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .fa-x{display:grid;gap:1px;margin-top:4px;font-size:12px;line-height:1.3}
+.card .fa-x div{display:flex;justify-content:space-between;gap:4px;white-space:nowrap}
+.card .fa-x span{color:#cfe0ff}
+.card .fa-x b{color:var(--white);font-size:12px}
+.card .fa-x .sh{display:none}                                       /* short labels, for narrow phone cards */
+.card .fnm{font-family:var(--px);font-size:9px;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .sal{font-family:var(--px);font-size:12px}
+.card.dim{opacity:.45}
+.card .flag{position:absolute;inset:auto 0 0 0;background:var(--red);font-family:var(--px);font-size:10px;padding:2px}
+.card:has(.flag) .bot{padding-bottom:22px}                          /* keep the flag from covering the last line */
+.pc-HN,.pc-RS,.pc-SW{background:#5eb4f0}.pc-MD,.pc-WG{background:#58c98a}.pc-ST,.pc-DP{background:#e8604f}
+
+.capbar{display:flex;align-items:center;gap:10px;margin-top:10px}
+.cap{flex:1;border:3px solid var(--white);border-radius:6px;background:var(--navy);padding:4px 8px}
+.cap .t{font-family:var(--px);font-size:11px;text-align:center;margin-bottom:3px}
+.cap .track{height:14px;background:#000;border:2px solid #000}
+.cap .track i{display:block;height:100%;background:var(--yellow)}
+
+/* --- player page --- */
+.pp{display:grid;grid-template-columns:170px minmax(0,1fr);gap:14px}
+.pp .face{border:3px solid var(--white);border-radius:6px;overflow:hidden;background:var(--gray)}
+.pp .face .top{height:120px;display:flex;align-items:flex-end;justify-content:center}
+.pp .face img{width:112px;height:112px;image-rendering:pixelated}
+.pp .face .bot{padding:6px;border-top:3px solid var(--white);text-align:center}
+.rt{display:grid;grid-template-columns:92px minmax(0,1fr) 40px auto;align-items:center;gap:8px;margin-bottom:8px}
+.rt .nm{font-family:var(--px);font-size:12px}
+.segs{display:grid;grid-template-columns:repeat(10,1fr);gap:2px}
+.segs i{height:14px;background:var(--navy);border-radius:1px}
+.segs i.on{background:var(--yellow)}
+.segs i.pot{background:#5a6a9a}
+
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-family:var(--px);font-size:10px;color:#cfe0ff;text-align:right;padding:4px;font-weight:400}
+td{padding:5px 4px;text-align:right;border-top:2px solid rgba(255,255,255,.15)}
+th:first-child,td:first-child{text-align:left}
+tr.me td{color:var(--yellow)}
+tr.cut td{border-top:2px dashed var(--yellow)}
+.brk{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px;height:min(68vh,430px);padding:6px 8px}
+.bcol{display:flex;flex-direction:column;min-width:0}
+.bh{font-family:var(--px);font-size:9px;color:#cfe0ff;text-align:center;white-space:nowrap;margin-bottom:3px}
+.bms{flex:1;display:flex;flex-direction:column;justify-content:space-around;gap:3px;min-height:0}
+.bpi .bms{justify-content:space-between}
+.bm{background:rgba(0,0,0,.22);border:2px solid rgba(255,255,255,.22);border-radius:6px;font-size:13px;line-height:1.2;padding:1px 5px}
+.bm div{display:flex;gap:5px;white-space:nowrap;overflow:hidden}
+.bm .sd{opacity:.65;min-width:1.3em;text-align:right}
+.bm .w{font-weight:700}.bm .l{opacity:.4}.bm .me{color:var(--yellow)}.bm .tbd{opacity:.4}
+.bfin .bm{border-color:var(--yellow)}
+.bchamp{text-align:center;font-family:var(--px);font-size:11px}
+
+.sheet-bg{position:fixed;inset:0;background:rgba(5,10,30,.6);z-index:40}
+.sheet{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:41;width:min(460px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;border:3px solid var(--white);border-radius:8px;background:var(--blue-d);padding:14px;box-shadow:0 6px 0 var(--navy)}
+.sheet .inner{display:grid;gap:10px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:60;background:var(--yellow);color:#241a00;font-family:var(--px);font-size:12px;padding:8px 12px;border-radius:4px;border:2px solid #fff;max-width:calc(100% - 32px);text-align:center}
+input[type=text]{width:100%;background:var(--navy);border:3px solid var(--white);border-radius:6px;padding:8px;font:16px var(--body);color:#fff}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.sw{width:38px;height:38px;border-radius:4px;border:3px solid transparent;padding:0}
+.sw.on{border-color:#fff}
+
+/* --- game --- */
+#game{position:fixed;inset:0;background:#0b1433;z-index:30;display:flex;align-items:center;justify-content:center}
+#game[hidden]{display:none}
+.stage{position:relative}
+#court{display:block;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+.hud{position:absolute;left:0;right:0;top:0;display:flex;flex-direction:column;align-items:center;pointer-events:none}
+.sb{display:flex;align-items:stretch;border:3px solid #fff;border-top:0;border-radius:0 0 10px 10px;background:#0b1433;font-family:var(--px);font-weight:700;overflow:hidden;box-shadow:0 4px 0 rgba(0,0,0,.55)}
+.sb .tm{display:flex;align-items:center;gap:8px;padding:4px 10px 5px;min-width:112px;position:relative;box-shadow:inset 0 -4px 0 rgba(0,0,0,.25)}
+.sb .tm.r{justify-content:flex-end}
+.sb .ab{font-size:15px;letter-spacing:.04em;text-shadow:0 2px 0 rgba(0,0,0,.45)}
+.sb .sc{font-size:28px;line-height:1;min-width:38px;text-align:center;color:#fff;text-shadow:0 3px 0 rgba(0,0,0,.5)}
+.sb .poss{width:8px;height:10px}
+.sb .poss.on{background:var(--yellow);clip-path:polygon(0 50%,100% 0,100% 100%)}
+.sb .tm.r .poss.on{clip-path:polygon(0 0,100% 50%,0 100%)}
+.sb .mid{display:grid;place-items:center;align-content:center;padding:2px 12px;border-inline:3px solid #fff;min-width:78px;background:#0b1433;line-height:1.05}
+.sb .q{font-size:11px;color:var(--yellow)}
+.sb .rd{font-size:8px;color:#fff;letter-spacing:1px;white-space:nowrap}.sb .rd[hidden]{display:none}
+.champ{position:relative;display:grid;justify-items:center;align-content:center;gap:8px;text-align:center;min-height:min(72vh,440px);overflow:hidden}
+.champ .cup{font-size:76px;line-height:1;filter:drop-shadow(0 5px 0 rgba(0,0,0,.4));animation:cupin .7s cubic-bezier(.2,1.5,.4,1) both}
+.champ h2{font-family:var(--px);font-size:30px;margin:0;color:var(--yellow);text-shadow:0 3px 0 #000}
+.champ .cf{position:absolute;top:-12px;width:7px;height:11px;animation:cfall linear infinite;pointer-events:none}
+.champ > :not(.cf){position:relative;z-index:1}
+@keyframes cfall{to{transform:translateY(480px) rotate(540deg)}}
+@keyframes cupin{from{transform:scale(.2) rotate(-20deg);opacity:0}}
+@media (max-height:500px){.champ{min-height:calc(100vh - 78px);gap:4px}.champ .cup{font-size:54px}.champ h2{font-size:22px}}
+.sb .clk{font-size:19px;color:#fff}
+.shotbox{margin-top:-1px;border:3px solid #fff;border-top:0;border-radius:0 0 6px 6px;background:#1a0d0d;color:#ff5a3c;font-family:var(--px);font-weight:700;font-size:15px;padding:0 10px 2px;min-width:44px;text-align:center;text-shadow:0 0 6px rgba(255,90,60,.6);box-shadow:0 3px 0 rgba(0,0,0,.5)}
+.shotbox:empty{display:none}
+.gbtn{position:absolute;top:6px;right:6px;pointer-events:auto}
+.banner{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-family:var(--px);font-weight:700;font-size:26px;text-shadow:0 3px 0 #000,0 0 14px rgba(0,0,0,.6);text-align:center;pointer-events:none;white-space:nowrap}
+.banner small.big{font-size:30px;color:#fff;margin-top:6px}
+.banner small{display:block;font-size:13px;color:var(--yellow);margin-top:4px}
+/* Shot meter: a slim bar sitting right above the SHOOT button (between it and the basket we attack), so the
+   thumb and the eyes are in the same corner. The other team's meter mirrors it bottom-left, by their basket.
+   --sb: button size, --sb-r / --sb-b: button's right and bottom offsets, --mw / --mh: meter size. */
+:root{--sb:138px;--sb-r:calc(12px + env(safe-area-inset-right) * .7);--sb-l:calc(12px + env(safe-area-inset-left) * .7);--sb-b:calc(12px + env(safe-area-inset-bottom) * .5);--mw:14px;--mh:150px}
+.meter{position:absolute;right:calc(var(--sb-r) + (var(--sb) - var(--mw)) / 2);bottom:calc(var(--sb-b) + var(--sb) + 12px);width:var(--mw);height:var(--mh);border:2px solid #fff;border-radius:4px;background:#0b1433;pointer-events:none;box-shadow:0 2px 0 #000;overflow:visible}
+.meter i{position:absolute;left:0;right:0;bottom:0;height:0;border-radius:2px}
+.meter .pct{position:absolute;right:calc(var(--mw) + 8px);bottom:-3px;font-family:var(--numf);font-weight:700;font-size:12px;text-shadow:0 2px 0 #000;white-space:nowrap}
+.meter.right{right:auto;left:calc(var(--sb-l) + (var(--sb) - var(--mw)) / 2)}
+.stats[hidden]{display:none}
+.stats{position:absolute;inset:0;display:grid;place-items:center;background:rgba(8,14,40,.55);z-index:5}
+.st-card{border:3px solid #fff;border-radius:8px;background:var(--blue-d);padding:10px 16px 12px;box-shadow:0 5px 0 var(--navy);width:min(430px,92%);display:grid;gap:6px;text-align:center}
+.st-title{font-family:var(--px);font-weight:700;font-size:22px;text-shadow:0 3px 0 var(--navy)}
+.st-span{font-family:var(--px);font-size:11px;color:var(--yellow);margin-top:-4px}
+.st-score{display:flex;align-items:center;justify-content:center;gap:10px;font-family:var(--px);font-weight:700}
+.st-team{border:3px solid #fff;border-radius:5px;padding:2px 8px;font-size:14px}
+.st-num{font-size:26px;min-width:40px}
+.st-dash{color:#cfe0ff}
+.st-table{width:100%;border-collapse:collapse;font-size:15px}
+.st-table th{font-family:var(--px);font-size:11px;color:#cfe0ff;text-align:center;font-weight:400;padding:4px 6px;border-top:2px solid rgba(255,255,255,.15)}
+.st-table td{padding:4px 6px;border-top:2px solid rgba(255,255,255,.15);font-variant-numeric:tabular-nums;font-family:var(--px);font-size:13px}
+.st-table td.u{text-align:left}.st-table td.v{text-align:right}
+.st-table .pc{color:#cfe0ff;font-size:11px}
+.meter.right .pct{right:auto;left:calc(var(--mw) + 8px)}
+.kitp{display:grid;gap:8px;justify-items:center}
+.kitp .row{width:100%}
+.kitimg{width:112px;height:auto;image-rendering:pixelated;background:#d49a5c;border:3px solid #fff;border-radius:6px;padding:6px 10px}
+.kitrow{display:flex;align-items:center;gap:8px;width:100%;justify-content:space-between}
+.seg{display:flex;gap:6px}
+.lfilt{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.lfilt select{font:700 13px var(--px);color:var(--white);background:var(--blue-dd);border:3px solid var(--white);border-radius:6px;padding:6px 8px}
+.lt{font-size:13px}.lt td,.lt th{white-space:nowrap}
+.lt th button{all:unset;cursor:pointer;padding:2px 3px;border-radius:3px}
+.lt th button.on{background:var(--yellow);color:#241a00}
+.lt td.nm2{text-align:left;max-width:190px;overflow:hidden;text-overflow:ellipsis}
+.lt td.tm{text-align:left;font-family:var(--px);font-size:11px}
+.lt td.sorted{color:var(--yellow);font-weight:700}
+.lt .zero td{color:#9fb3e0}
+.pst{font-size:13px}.pst td,.pst th{white-space:nowrap}.pst td:first-child{font-family:var(--px);font-size:11px;text-align:left}
+.tgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.tpick{display:flex;align-items:center;gap:6px;border:2px solid rgba(255,255,255,.25);border-radius:6px;background:var(--blue-dd);padding:5px 6px;text-align:left}
+.tpick.on{border-color:var(--yellow);box-shadow:0 0 0 2px var(--yellow)}
+.tpick .tn{font-size:11px;line-height:1.15}.tpick .tn b{font-family:var(--px);font-size:10px}
+.shootbtn{position:absolute;right:12px;bottom:12px;width:138px;height:138px;border-radius:50%;font-size:20px;padding:0;touch-action:none;-webkit-touch-callout:none;z-index:4}
+.shootbtn:active{transform:translateY(3px)}
+/* the defender's joystick: bottom left, clear of the notch */
+.joy{position:absolute;left:calc(14px + env(safe-area-inset-left) * .7);bottom:calc(14px + env(safe-area-inset-bottom) * .5);width:var(--joy,120px);height:var(--joy,120px);border-radius:50%;border:3px solid rgba(255,255,255,.85);background:rgba(11,20,51,.45);touch-action:none;-webkit-touch-callout:none;z-index:4;display:grid;place-items:center}
+.joy[hidden]{display:none}
+.joy i{width:44%;height:44%;border-radius:50%;background:var(--yellow);border:3px solid #fff;box-shadow:0 3px 0 rgba(0,0,0,.45);pointer-events:none}
+.shotbox:empty{display:none}
+.shootbtn.dunk{background:#ff5a3c;color:#fff;border-color:#fff}
+.tip{position:absolute;left:50%;transform:translateX(-50%);bottom:4px;font-family:var(--px);font-size:10px;text-align:center;color:#fff;text-shadow:0 2px 0 #000;pointer-events:none;max-width:60%}
+
+/* money outlook (front office) */
+.fac-list{display:grid;gap:10px}.fshort{display:none}
+.outlook .tipline{font-size:12px;line-height:1.3;margin-top:5px;padding-left:10px;position:relative}
+.outlook .tipline::before{content:'';position:absolute;left:0;top:5px;width:5px;height:5px;border-radius:50%;background:var(--yellow)}
+/* save slots */
+.slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:820px;margin:0 auto}
+.slot{display:grid;gap:8px;align-content:start}
+.slot-team{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot-empty{font-family:var(--px);font-size:16px;text-align:center;padding:22px 0}
+.slot-meta{display:flex;justify-content:space-between;gap:6px;font-size:12px;color:#cfe0ff}
+/* free agents: tabs by position, one row of cards */
+.fatabs{gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.cards.farow{grid-template-columns:repeat(var(--n),minmax(0,1fr))}
+/* post-game: result | money | fans + continue */
+.post3{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,.9fr);gap:12px;align-items:start}
+
+/* Edge to edge on notched phones: backgrounds and the court run under the notch; buttons and text stay
+   clear of it (env() is 0 on computers, so nothing changes there). The notch is only ~30pt deep. */
+/* --side-*: the side margin menus use; the game uses the same (--game-side-*) so the court is exactly as wide as
+   the menus. Computers keep 16px menus and a full-width game; phones get the notch-aware margin plus 2.5% a side. */
+:root{--side-l:16px;--side-r:16px;--game-side-l:0px;--game-side-r:0px}
+#ui{padding-left:var(--side-l);padding-right:var(--side-r)}
+#game{padding-left:var(--game-side-l);padding-right:var(--game-side-r);box-sizing:border-box}
+/* the court runs under the notch, but the buttons and meters on top of it stay clear of it */
+.shootbtn{width:var(--sb);height:var(--sb);right:var(--sb-r);bottom:var(--sb-b)}
+.gbtn{right:calc(6px + env(safe-area-inset-right) * .7)}
+
+/* Phones sideways (iPhone 14 landscape leaves about 750 x 369 to work with): every screen but the
+   stats lists fits on one screen, so spacing, type and art all tighten up. */
+@media (max-height:500px){
+  /* menus keep side margins; the court itself fills the whole phone, edge to edge (user's choice) */
+  :root{--side-l:calc(max(10px, env(safe-area-inset-left) - 14px) + 2.5vw);--side-r:calc(max(10px, env(safe-area-inset-right) - 14px) + 2.5vw)}
+  #ui{padding-block:6px 8px}                                           /* sides come from --side-l / --side-r */
+  .bar{margin-bottom:6px;gap:8px}
+  .title{font-size:18px}
+  .box{padding:2px 8px;font-size:12px;border-width:2px}
+  .icon{width:34px;height:30px;font-size:15px}
+  .btn{padding:6px 10px;font-size:12px;box-shadow:0 3px 0 var(--navy)}
+  .btn.sm{padding:4px 7px;font-size:11px}
+  .panel{padding:6px 9px;border-width:2px}
+  .label{font-size:10px}
+  .hub{gap:8px}
+  .menu{gap:6px}.menu .btn{padding:9px 4px}
+  .chips{margin-top:6px;gap:6px}.chip{padding:3px 4px;border-width:2px}
+  .vs{margin:2px 0 6px}
+  .badge{width:36px;height:36px;font-size:11px}
+  /* cards */
+  .cards{gap:6px}
+  .card{border-width:2px;box-shadow:0 3px 0 var(--navy)}
+  .card .top{height:44px}.card .top img{width:40px;height:40px}
+  .card .pos{font-size:10px}.card .age{font-size:9px}
+  .card .bot{padding:2px 3px 3px;border-top-width:2px}
+  .card .nm,.card .sal{font-size:10px}.card .fnm{font-size:8px}
+  .card .fa-x,.card .fa-x b{font-size:10px}
+  .card .fa-x .lg{display:none}.card .fa-x .sh{display:inline}.card .fa-x b{letter-spacing:-.02em}
+  .card .stars{font-size:11px;letter-spacing:0}
+  .card:has(.flag) .bot{padding-bottom:16px}.card .flag{font-size:8px;padding:1px}
+  .capbar{margin-top:6px;gap:6px}.cap{padding:2px 6px;border-width:2px}.cap .t{font-size:9px;margin-bottom:2px}.cap .track{height:8px}
+  .fatabs{margin-bottom:6px}.fanote,.intro{display:none}
+  /* tables (standings) */
+  table{font-size:12px}th{padding:1px 4px;font-size:9px}td{padding:0 4px;border-top-width:1px;line-height:1.2}
+  td .stars{font-size:10px;letter-spacing:0}
+  /* player page */
+  .pp{grid-template-columns:130px minmax(0,1fr);gap:10px}
+  .pp .face .top{height:84px}.pp .face img{width:80px;height:80px}
+  .pp .face .bot{padding:4px}
+  .rt{margin-bottom:4px;grid-template-columns:78px minmax(0,1fr) 36px auto;gap:6px}
+  .rt .nm{font-size:10px}.segs i{height:10px}
+  .rt ~ .muted{display:none}                                           /* rating descriptions and the training note: five ratings need the room */
+  .pst{font-size:11px}.pst td,.pst th{padding:1px 4px}
+  .pp .panel .muted{display:none}                                      /* "per game" footnote under the stats table */
+  .rt{margin-bottom:2px}
+  /* team picker */
+  .tgrid{gap:4px}.tpick{padding:2px 4px;gap:4px}.tpick .tn{font-size:9px;line-height:1.05}.tpick .tn b{font-size:8px}
+  .badge.sm{width:22px;height:22px;font-size:7px}
+  /* uniforms */
+  .kitimg{width:78px;padding:3px 6px}.kitp{gap:4px}
+  /* post-game */
+  .post3{gap:8px}.post3 .panel{font-size:12px !important}
+  .post3 .px.num{font-size:22px !important}
+  .sheet{padding:10px}.sheet .inner{gap:6px}
+  /* front office: the long money breakdown hides, facilities go 2 x 2, the outlook tightens */
+  .fo-detail{display:none}
+  .fac-list{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .fac-list .panel{flex-direction:column;align-items:stretch;gap:2px;padding-block:5px}
+  .fac-list .panel .muted{display:none}                                   /* the upgrade descriptions stay on the computer version */
+  .fac-list .panel .px{font-size:11px !important}
+  .fac-list .fshort{display:block;font-size:11px;line-height:1.1;color:#cfe0ff}                /* phones: one short line saying what the level gives */
+  .outlook .tipline{font-size:10.5px;line-height:1.25;margin-top:3px}
+  /* in the game: a thumb-sized SHOOT button instead of the big desktop one */
+  :root{--sb:76px;--mw:10px;--mh:100px}                               /* phone: small button, slim meter above it */
+  .shootbtn{font-size:12px;border-width:2px;box-shadow:0 3px 0 var(--navy)}
+  :root{--joy:84px}
+  .meter .pct{font-size:10px}
+}
+
+#rotate{display:none;position:fixed;inset:0;z-index:100;background:var(--blue);align-items:center;justify-content:center;text-align:center;padding:24px}
+#rotate .in{display:grid;gap:14px;justify-items:center}
+@media (orientation:portrait) and (max-width:700px){ #rotate{display:flex} }
+</style>
+
+<div id="ui"></div>
+
+<div id="game" hidden>
+  <div class="stage" id="stage">
+    <canvas id="court" width="640" height="360"></canvas>
+    <div class="hud"><div class="sb">
+      <div class="tm" id="tmU"><span class="ab" id="aU"></span><span class="sc num" id="sU">0</span><span class="poss" id="pU"></span></div>
+      <div class="mid"><span class="rd" id="rdn" hidden></span><span class="q" id="qq">1ST</span><span class="clk num" id="qc">15:00</span></div>
+      <div class="tm r" id="tmO"><span class="poss" id="pO"></span><span class="sc num" id="sO">0</span><span class="ab" id="aO"></span></div>
+    </div><div class="shotbox num" id="shc">24</div></div>
+    <button class="btn sm gbtn" id="pauseBtn" aria-label="Pause">II</button>
+    <div class="joy" id="joy" hidden aria-label="Move your defender"><i id="joyNub"></i></div>
+    <div class="banner" id="banner" hidden></div>
+    <div class="stats" id="stats" hidden></div>
+    <div class="tip" id="tip"></div>
+  </div>
+</div>
+
+<div id="rotate"><div class="in">
+  <div class="px" style="font-size:22px">Turn your phone sideways</div>
+  <div class="muted">Retro Disc plays in landscape.</div>
+</div></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ============================ helpers ============================ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const ri = (a, b) => Math.floor(rnd(a, b + 1));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const avg = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0;
+const uid = () => Math.random().toString(36).slice(2, 9);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// amounts are in millions; under $1M shows in thousands ($960K)
+const money = m => { const a = Math.abs(m), s = m < 0 ? '-' : '';
+  if (a === 0) return '$0';
+  if (Math.round(a * 1000) < 1000) return `${s}$${Math.round(a * 1000)}K`;
+  return s + '$' + (a >= 10 ? Math.round(a) : a.toFixed(1).replace(/\.0$/, '')) + 'M'; };
+
+/* ============================ data ============================ */
+// every player in the league is made up
+const FIRST = ['Marcus','Tyler','Andre','Malik','Darius','Trey','Cole','Evan','Aaron','Caleb','Derek','Elijah','Luke','Mason','Noah','Omar','Quinn','Sam','Terrence','Victor','Xavier','Dante','Miles','Luis','Theo','Rashad','Bryce','Kai','Deshawn','Jamar'];
+const LAST = ['Brooks','Ellis','Jenkins','Lewis','Moore','Owens','Stone','Turner','Vance','Banks','Cole','Dixon','Fisher','Gibson','Harper','Knight','Lowe','Newton','Ramsey','Sutton','Tate','Webb','Bishop','Cross','Drake','Foster','Holt','Maxwell','Ruiz','Santos','Warren','Bell','Coleman','Diaz','Graves','Okafor','Mensah','Kowalski','Novak'];
+const TONES = { black:'#7a4a2b', tan:'#c68a61', white:'#e8b58f', dark:'#57341f', brown:'#7a4a2b', caramel:'#a06a44', light:'#e0aa82', fair:'#f0c6a2' };
+const SKIN = Object.values(TONES);
+const HAIR = ['#1b1410','#3a2618','#5c3a1e','#d7b35a'];
+const HAIR_BY_TONE = { black:['#1b1410'], tan:['#1b1410','#3a2618'], white:['#1b1410','#3a2618','#5c3a1e','#d7b35a'] };
+const STYLES_BY_TONE = { black:['afro','fade','headband'], tan:['afro','fade','headband','curly'], white:['fade','headband','curly'] };
+function giveLook(p){
+  const tone = pick(['black','black','tan','white','white']);
+  p.tone = tone; p.skin = TONES[tone]; p.hair = pick(HAIR_BY_TONE[tone]); p.style = pick(STYLES_BY_TONE[tone]);
+  return p;
+}
+// every team: a main color, a secondary color, and white
+const COLORS = [['#d9453b','#1f2a44'],['#2f6fe0','#ffd23f'],['#2f9e5b','#ffd23f'],['#7a4bd1','#ffd23f'],['#f08a24','#1b2233'],['#1f2a44','#e0584b'],['#12a3a3','#1f2a44'],['#b0304f','#ffd23f']];
+const SECONDARY = Object.fromEntries(COLORS);
+const AI_TEAMS = [['Portside','Pilots'],['Ridgeview','Rams'],['Lakeshore','Lynx'],['Mesa','Vipers'],['Northgate','Wolves'],['Bayview','Herons'],['Summit','Peaks'],['Ironwood','Bears'],['Coral Coast','Sharks'],['Pine Hollow','Owls'],['Redstone','Miners']];
+/* Seven on the field, one roster spot each:
+     HN handler, RS reset, SW swing   the three who stay near the disc and do most of the throwing
+     MD mid, WG wing                  cut underneath for the short and middle throws
+     ST striker, DP deep              go long and finish in the end zone */
+const POS = ['HN','RS','SW','MD','WG','ST','DP'];
+const POS_NAME = { HN:'Handler', RS:'Reset', SW:'Swing', MD:'Mid', WG:'Wing', ST:'Striker', DP:'Deep' };
+// 30 clubs in two conferences of 15: [id, city, name, conference, main color, second color]
+const TEAMS = [
+  ['PHI','Philadelphia','Liberty','E','#006BB6','#ED174C'], ['OKC','Oklahoma City','Twisters','W','#007AC1','#EF3B24'], ['NYK','New York','Skyline','E','#006BB6','#F58426'],
+  ['IND','Indiana','Racers','E','#002D62','#FDBB30'], ['DEN','Denver','Altitude','W','#0E2240','#FEC524'], ['SAS','San Antonio','Bats','W','#000000','#C4CED4'],
+  ['CLE','Cleveland','Current','E','#860038','#FDBB30'], ['ATL','Atlanta','Flyers','E','#E03A3E','#FDB927'], ['HOU','Houston','Comets','W','#CE1141','#000000'],
+  ['TOR','Toronto','North','E','#CE1141','#000000'], ['BOS','Boston','Harbor','E','#007A33','#BA9653'], ['MIN','Minnesota','Frost','W','#0C2340','#78BE20'],
+  ['DET','Detroit','Motors','E','#C8102E','#1D42BA'], ['MIA','Miami','Tide','E','#98002E','#000000'], ['UTA','Utah','Peaks','W','#002B5C','#F9A01B'],
+  ['LAL','Los Angeles','Stars','W','#552583','#FDB927'], ['POR','Portland','Pines','W','#E03A3E','#000000'], ['ORL','Orlando','Orbit','E','#0077C0','#C4CED4'],
+  ['GSW','Golden State','Fog','W','#1D428A','#FFC72C'], ['PHX','Phoenix','Scorch','W','#1D1160','#E56020'], ['NOP','New Orleans','Krewe','W','#0C2340','#85714D'],
+  ['WAS','Washington','Monuments','E','#002B5C','#E31837'], ['DAL','Dallas','Stampede','W','#00538C','#B8C4CA'], ['LAC','LA','Waves','W','#C8102E','#1D428A'],
+  ['CHA','Charlotte','Kites','E','#1D1160','#00788C'], ['CHI','Chicago','Gusts','E','#CE1141','#000000'], ['MEM','Memphis','Rhythm','W','#5D76A9','#12173F'],
+  ['SAC','Sacramento','Gold','W','#5A2D81','#63727A'], ['BKN','Brooklyn','Bridges','E','#000000','#777D84'], ['MIL','Milwaukee','Brew','E','#00471B','#EEE1C6'],
+].map(([abbr, city, name, conf, c1, c2]) => ({ abbr, city, name, conf, c1, c2 }));
+// five ratings, 1-10 (user spec): speed, stamina, throwing (accuracy), catching, strength (how far and how fast he throws)
+const RATE = ['spd','sta','thr','cat','str'];
+const RATE_NAME = { spd:'Speed', sta:'Stamina', thr:'Throwing', cat:'Catching', str:'Strength' };
+const RATE_DESC = { spd:'70 yards in 12 seconds at 1, in 10 seconds at 10.', sta:'Slows down less the more he runs in a point.', thr:'Accuracy: a throw can miss by up to 20 yards at 1, 5 at 10.', cat:'Holds on to faster and harder throws, and picks off more.', str:'Longest throw: 35 yards at 1, 70 at 10. Faster throws too.' };
+const TILT = {
+  HN:{ spd:-1.5, sta:-.5, thr:2, cat:-.5, str:.5 }, RS:{ spd:-.5, sta:0, thr:1.5, cat:0, str:-1 }, SW:{ spd:0, sta:0, thr:1, cat:0, str:-1 },
+  MD:{ spd:.5, sta:1, thr:-.5, cat:.5, str:-1.5 }, WG:{ spd:1, sta:.5, thr:-1, cat:.5, str:-1 }, ST:{ spd:1.5, sta:-.5, thr:-1.5, cat:1.5, str:-1 }, DP:{ spd:2, sta:-1, thr:-2, cat:1.5, str:-.5 },
+};
+const SEASON_GAMES = 14;
+// TV money per game (amounts in millions). Star power for each player on the roster: 1-1.5 stars $10K, 2-2.5 $25K,
+// 3-3.5 $50K, 4-4.5 $100K, 5 stars $250K.
+//   HOME: local TV $30K per 1% of fans + star power         (fans watch their team at home)
+//   AWAY: national TV $3K per 1% of fans + star power x 1.5 (national TV picks up star teams on the road)
+// So lots of fans pays mostly at home; star power pays everywhere and a little extra on the road.
+const TV_HOME_PER_FAN = .03, TV_AWAY_PER_FAN = .003, TV_AWAY_STARS = 1.5, TV_STAR = [0, .01, .025, .05, .1, .25];
+const tvStarsFor = p => TV_STAR[Math.floor(pStars(p))] || 0;
+const tvDeal = home => {
+  const f = Math.round(G.fans), star = rosterArr().reduce((s, p) => s + tvStarsFor(p), 0);
+  const fans = f * (home ? TV_HOME_PER_FAN : TV_AWAY_PER_FAN), stars = star * (home ? 1 : TV_AWAY_STARS);
+  return { fans, stars, total:fans + stars };
+};
+/* Front office upgrades (user, 2026-10-05: only the Arena felt useful, so the other three were replaced):
+     arena         more seats: pays when the building sells out
+     amenities     "Food & Parking": every fan in the building spends more, so it pays at any crowd
+     marketing     wins bring more fans, losses cost fewer
+     recruiting    players ask for less: each level drops the bottom of the asking range 10%, the top stays (user spec) */
+const foodPer = (lv = G.fac.amenities) => 18 + 10 * (lv - 1);          // $ of food per fan: 18 / 28 / 38 / 48 / 58
+const parkPer = (lv = G.fac.amenities) => 40 + 12.5 * (lv - 1);        // $ per car: 40 / 52.50 / 65 / 77.50 / 90
+const fanSpend = (lv = G.fac.amenities) => foodPer(lv) + parkPer(lv) / FANS_PER_CAR;   // food + parking per fan: 34 / 49 / 64 / 79 / 94 (user, 2026-10-05: +$51 a level made a 14-0 season worth $62M)
+const MKT_WIN = .15, MKT_LOSS = .1;                                    // per Marketing level above 1: wins +15% fans, losses -10%
+const ASK_LO = .85, ASK_HI = 1.15, ASK_DROP = .9;                      // asking price: 85-115% of the star rate; Recruiting lowers the 85% end by 10% a level
+const DRAFT_ERR = 1;                                                   // draft ratings are shown within ±1 (scouting is gone)
+const FAC = {
+  arena:{ name:'Arena', short:lv => seats(lv).toLocaleString() + ' seats', desc:lv => `${seats(lv).toLocaleString()} seats.` },
+  amenities:{ name:'Food + Parking', short:lv => '$' + Math.round(fanSpend(lv)) + ' a fan', desc:lv => `Each fan spends $${Math.round(fanSpend(lv))} on food and parking${lv < FAC_MAX ? ` (next level $${Math.round(fanSpend(lv + 1))})` : ''}.` },
+  marketing:{ name:'Marketing', short:lv => '+' + Math.round((lv - 1) * MKT_WIN * 100) + '% fans per win', desc:lv => lv > 1 ? `Wins bring ${Math.round((lv - 1) * MKT_WIN * 100)}% more fans, losses cost ${Math.round((lv - 1) * MKT_LOSS * 100)}% fewer.` : 'Wins bring more fans, losses cost fewer.' },
+  recruiting:{ name:'Recruiting', short:lv => lv > 1 ? 'asks from -' + Math.round((1 - Math.pow(ASK_DROP, lv - 1)) * 100) + '%' : 'players ask less',
+    desc:lv => lv > 1 ? `Players can ask up to ${Math.round((1 - Math.pow(ASK_DROP, lv - 1)) * 100)}% under the normal low price. It is still luck: the top of the range stays.` : 'Each level lowers the least a player may ask by 10%. Still luck: the top of the range stays.' },
+};
+// what each upgrade costs, $M (the user's prices, 2026-10-05): four upgrades each, so levels run 1-5
+const FAC_PRICE = {
+  arena:[1.5, 3, 4.5, 6],
+  amenities:[.5, 1, 1.5, 3],
+  marketing:[1, 2, 3.5, 5],
+  recruiting:[1, 2, 3.5, 5],
+};
+const FAC_MAX = 5;
+const facCost = (k, lv = G.fac[k]) => FAC_PRICE[k][lv - 1];
+const seats = lv => 6000 + 3000 * (lv - 1);
+
+/* ============================ players ============================ */
+const pAvg = p => RATE.reduce((s, k) => s + p[k], 0) / RATE.length;
+// Stars from the average rating, read as a total out of 40 (average x 4): every 4 points is half a star.
+// 36-40 is 5 stars, 32-35 is 4.5 ... 12-15 is 2, 9-11 is 1.5, 8 and under is 1.
+const starsFromTotal = t => t <= 8 ? 1 : Math.min(5, 1.5 + .5 * Math.floor((t - 8) / 4));
+const pStars = p => starsFromTotal(Math.round(pAvg(p) * 4));
+// the average rating that lands in the middle of a star band (1 star aims at 7 of its 8, so a little randomness stays under 9)
+const starsTarget = st => (st >= 1.5 ? 10 + (st - 1.5) * 8 : st >= 1 ? 7 : 5) / 4;
+// a smooth star value, for pricing: matches the bands above
+const starsSmooth = p => { const t = pAvg(p) * 4; return t <= 8 ? t / 8 : 1.5 + (t - 10) / 8; };
+function starsHTML(s){
+  const full = Math.floor(s), half = s - full >= .5;
+  let h = '';
+  // a half star is a grey star with its left half painted gold (the "half star" symbol shows as a box on iPhone)
+  for (let i = 0; i < 5; i++) h += i < full ? '★' : (i === full && half ? '<span class="half">★</span>' : '<span class="off">★</span>');
+  return `<span class="stars">${h}</span>`;
+}
+function makePlayer(pos, target, age = ri(20, 32)){
+  const p = giveLook({ id:uid(), fn:pick(FIRST), ln:pick(LAST), pos, age, num:ri(0, 55), gp:0, pts:0, sal:0, yrs:0 });
+  for (const k of RATE) p[k] = clamp(Math.round(target + TILT[pos][k] + rnd(-1.3, 1.3)), 1, 10);
+  const d = Math.round((target - pAvg(p)) * RATE.length);
+  for (let i = 0; i < Math.abs(d); i++) { const k = pick(RATE); p[k] = clamp(p[k] + Math.sign(d), 1, 10); }
+  const room = age <= 21 ? rnd(1.5, 4) : age <= 24 ? rnd(.5, 2.5) : age <= 27 ? rnd(0, 1) : 0;
+  p.pot = Math.min(10, Math.round((pAvg(p) + room) * 2) / 2);
+  return p;
+}
+// re-signing your own player costs at least 20% more than his old deal, or his market price if that's higher
+function resignPrice(p){ return Math.max(askSalary(p), Math.round(p.sal * 1.2 * 20) / 20); }
+// priced by stars: about $1M at 1 star, $3.5M at 2, $7.5M at 3, $13M at 4, $21M at 5 (20% less at 32+)
+// each player has his own price: 85-115% of the star rate, rolled once and kept (p.askMul). Recruiting stretches the
+// range downward: the 85% end drops 10% a level (85 → 76.5 → 69 → 62 → 56%) and every roll keeps its place in the range.
+const askMulNow = p => { const lv = (G && G.fac && G.fac.recruiting) || 1, u = clamp((p.askMul - ASK_LO) / (ASK_HI - ASK_LO), 0, 1); return lerp(ASK_LO * Math.pow(ASK_DROP, lv - 1), ASK_HI, u); };
+function askSalary(p){ const a = 1.5 + 1.4 * clamp(starsSmooth(p), 0, 5); p.askMul ??= ASK_LO + Math.random() * (ASK_HI - ASK_LO); return Math.max(1, Math.round(Math.pow(a / 10, 2.6) * 32 * askMulNow(p) * (p.age >= 32 ? .8 : 1) * 10) / 10); }   // to the nearest $100K, so each Recruiting level shows
+const potStars = p => starsFromTotal(Math.round(p.pot * 4));
+// contract length by age, rolled once per player: 24 and under 3-4 years, 25-29 2-3, 30 and up 2
+const askYears = p => {
+  if (p.askYrs == null || p.askYrsAge !== p.age) { p.askYrs = p.age <= 24 ? 3 + (Math.random() < .5 ? 1 : 0) : p.age <= 29 ? 2 + (Math.random() < .5 ? 1 : 0) : 2; p.askYrsAge = p.age; }
+  return p.askYrs;
+};
+const posColor = pos => `pc-${pos}`;
+
+/* ============================ state ============================ */
+let G = null;
+const userTeam = () => G.league.find(t => t.user);
+const teamById = id => G.league.find(t => t.id === id);
+const rosterArr = () => POS.map(p => G.roster[p]).filter(Boolean);
+const payroll = () => rosterArr().reduce((s, p) => s + p.sal, 0);
+function userRatings(){
+  const r = rosterArr();
+  const a = k => avg(r.map(p => p[k]));
+  return { ...Object.fromEntries(RATE.map(k => [k, a(k)])), stars:Math.round(avg(r.map(pStars)) * 2) / 2 };
+}
+function teamR(t){
+  if (t.user) return userRatings();
+  const a = k => avg(t.players.map(p => p[k]));
+  return { ...Object.fromEntries(RATE.map(k => [k, a(k)])), stars:Math.round(avg(t.players.map(pStars)) * 2) / 2 };
+}
+
+// Every team plays each team in its own conference once (15 teams, so one team sits out each round)
+function confSchedule(league){
+  const rounds = Array.from({ length:15 }, () => []);
+  for (const conf of ['E', 'W']) {
+    const t = league.filter(x => x.conf === conf).map(x => x.id).sort(() => Math.random() - .5);
+    t.push(null);                                                          // the bye slot
+    const n = t.length;
+    for (let r = 0; r < n - 1; r++) {
+      for (let i = 0; i < n / 2; i++) {
+        const a = t[i], b = t[n - 1 - i];
+        if (a && b) rounds[r].push(r % 2 ? { h:a, a:b } : { h:b, a:a });
+      }
+      t.splice(1, 0, t.pop());
+    }
+  }
+  return rounds;
+}
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = ri(0, i); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+// a made-up player at a star level (sal and years set from his asking price)
+function starPlayer(pos, stars, age = ri(21, 32)){ const p = makePlayer(pos, starsTarget(clamp(stars, .5, 5)) + rnd(-.2, .2), age); p.sal = askSalary(p); p.yrs = askYears(p); return p; }
+function newGame(pickAbbr){
+  const league = TEAMS.map(T => ({ id:T.abbr, city:T.city, name:T.name, abbr:T.abbr, conf:T.conf, c1:T.c1, c2:T.c2, w:0, l:0, pf:0, pa:0, players:[] }));
+  const mine = league.find(t => t.id === pickAbbr);
+  mine.id = 'U'; mine.user = true;
+  // every other club gets seven players around its own level, from strugglers (1.5 stars) to contenders (4.3)
+  for (const t of league) { if (t.user) continue; const lv = rnd(1.5, 4.3); t.players = POS.map(pos => starPlayer(pos, Math.round((lv + rnd(-1, 1)) * 2) / 2)); }
+  const roster = {};
+  for (const pos of POS) {
+    const p = makePlayer(pos, starsTarget(1) + rnd(-.2, .2), ri(21, 30)); p.sal = 1; p.yrs = ri(1, 2); roster[pos] = p;
+    while (Math.round(pAvg(p) * 4) > 8) { const k = RATE.reduce((a, b) => p[a] >= p[b] ? a : b); p[k]--; }   // your seven start at 1 star
+  }
+  const used = new Set(); for (const pos of POS) { const p = roster[pos]; while (used.has(p.num)) p.num = ri(0, 55); used.add(p.num); }
+  G = { v:2, season:1, week:0, phase:'regular', cash:2, credits:4, fans:25, boosts:[], gpSeason:0, cap:CAP_START, ticket:TICKET_FAIR, speed:10,
+    fac:{ arena:1, amenities:1, marketing:1, recruiting:1 }, roster, league, schedule:confSchedule(league), results:[],
+    fa:[], pool:[], history:[], playoffs:null, off:null, last:null, kit:{ j:'home', s:'home' }, fin:{ gate:0, tv:0, bonus:0, spend:0, salaries:0 } };
+  refillFA(FA_SIZE);
+}
+const FA_SIZE = 35;
+// keep free agency stocked: at least three at every position, from 1.5 stars up to the odd 5-star
+function refillFA(n){
+  for (const pos of POS) while (G.fa.filter(p => p.pos === pos).length < 3) addFA(pos);
+  while (G.fa.length < n) addFA(pick(POS));
+}
+function addFA(pos){ G.fa.push(starPlayer(pos, pick([1.5, 2, 2, 2.5, 2.5, 3, 3, 3.5, 4, 4.5, 5]), ri(22, 33))); }
+
+/* ============================ save ============================ */
+function migrate(g){
+  if (!g) return g;
+  if (!g.v || g.v < 2) { try { localStorage.setItem(CACHE + '.legacy', JSON.stringify(g)); } catch {} return null; }
+  const fix = p => {
+    if (!p || typeof p.style === 'string') return;
+    const n = parseInt((p.skin || '#c68a61').slice(1), 16), lum = ((n >> 16) + ((n >> 8) & 255) + (n & 255)) / 3;
+    p.tone = lum < 120 ? 'black' : lum < 175 ? 'tan' : 'white';
+    p.skin = TONES[p.tone]; p.hair = pick(HAIR_BY_TONE[p.tone]); p.style = pick(STYLES_BY_TONE[p.tone]);
+  };
+  Object.values(g.roster || {}).forEach(fix); (g.fa || []).forEach(fix); (g.off?.prospects || []).forEach(fix);
+  for (const t of g.league || []) if (!t.c2 || t.c2.toLowerCase() === '#ffffff') t.c2 = SECONDARY[t.c1] || '#1f2a44';
+  if (!g.kit) g.kit = { j:'home', s:'home' };
+  if (g.fac && g.fac.amenities != null && g.fac.recruiting == null) { g.fac.recruiting = g.fac.conditioning || 1; delete g.fac.conditioning; }   // Training + Medical became Recruiting
+  if (g.fac) for (const k in g.fac) g.fac[k] = Math.min(g.fac[k], 5);                // levels briefly went to 6
+  if (g.fans == null) { g.fans = g.hype ?? 25; delete g.hype; }                // hype became fans
+  g.boosts ||= []; g.gpSeason ??= 0; g.fans = Math.max(g.fans, 15);
+  if (g.ticket < TICKET_MIN) g.ticket = TICKET_FAIR;                               // tickets moved to $100-800
+  g.cap ??= CAP_MAX;                                                               // older saves keep the full cap
+  if (g.fac && g.fac.amenities == null) {                                          // 2026-10-05: Training Center → Food & Parking, Scouting → Marketing; levels carry over
+    const o = g.fac; g.fac = { arena:o.arena || 1, amenities:o.training || 1, marketing:o.scouting || 1, recruiting:Math.max(o.conditioning || 1, o.training || 1) };
+  }
+  return g;
+}
+function uniqueNum(p){
+  const taken = new Set(POS.map(pos => G.roster[pos]).filter(x => x && x !== p).map(x => x.num));
+  while (taken.has(p.num)) p.num = ri(0, 55);
+}
+/* ---- save slots: 3 separate games. Each lives in this device's storage (and in the artifact's database when
+   there is one). The old single save becomes slot 1. ---- */
+const CACHE = 'retrodisc.save.v1', SLOTS = 3;
+const slotKey = n => `retrodisc.slot${n}`;
+let SLOT = null, slotRemote = {};                                      // slotRemote: slots found in the database
+let DB = null, saveT = null, chain = Promise.resolve();
+function slotRaw(n){ let raw = null; try { raw = localStorage.getItem(slotKey(n)); } catch {} return raw || slotRemote[n] || null; }
+function slotInfo(n){
+  const raw = slotRaw(n); if (!raw) return null;
+  try { const g = JSON.parse(raw), t = (g.league || []).find(x => x.user);
+    return t ? { team:`${t.city} ${t.name}`, t, season:g.season, w:t.w, l:t.l, cash:g.cash, phase:g.phase } : null; } catch { return null; }
+}
+function save(){
+  if (!SLOT || !G) return;
+  const json = JSON.stringify(G), n = SLOT;
+  try { localStorage.setItem(slotKey(n), json); } catch {}
+  if (!DB) return;
+  clearTimeout(saveT);
+  saveT = setTimeout(() => { chain = chain.then(() => DB.doc('saves/slot' + n).set({ json, at:Date.now() })).catch(e => console.warn(e)); }, 600);
+}
+function resetSlot(n){
+  clearTimeout(saveT);                                               // a queued database save must not bring it back
+  try { localStorage.removeItem(slotKey(n)); } catch {}
+  delete slotRemote[n];
+  if (DB) DB.doc('saves/slot' + n).set({ json:'', at:Date.now() }).catch(() => {});
+}
+function openSlot(n){
+  SLOT = n; const raw = slotRaw(n);
+  G = null; screen = 'hub'; pickedTeam = null;
+  if (raw) { try { G = migrate(JSON.parse(raw)); } catch { G = null; } }
+  render();
+}
+
+/* ============================ league sim ============================ */
+/* One simulated possession: a string of throws that either all connect (a goal) or one doesn't (a turnover).
+   Each throw is completed about 80% of the time, more with good throwers and catchers, less against a fast
+   defense with good hands. A strong-armed team needs fewer throws to get there. */
+let lastPoss = null;                                                             // what the last simPossession did, for the box score
+function simPossession(off, def){
+  const P = lastPoss = { cmp:0, to:false, d:false, goal:false };
+  const pc = clamp(.80 + (off.thr - 5) * .012 + (off.cat - 5) * .012 - (def.spd - off.spd) * .012 - (def.cat - 5) * .006, .55, .95);
+  const n = clamp(ri(3, 7) - Math.round((off.str - 5) / 3), 2, 8);
+  for (let i = 0; i < n; i++) {
+    if (Math.random() > pc) { P.to = true; P.d = Math.random() < .35; return 0; }
+    P.cmp++;
+  }
+  P.goal = true;
+  return 1;
+}
+const teamPlayers = t => t.user ? rosterArr() : (t.players || []);
+const wPick = (arr, w) => { let x = Math.random() * arr.reduce((s, p) => s + w(p), 0); for (const p of arr) { x -= w(p); if (x <= 0) return p; } return arr[0]; };
+const THROW_W = { HN:3, RS:2.5, SW:2, MD:1, WG:1, ST:.6, DP:.5 };              // who does the throwing
+const CATCH_W = { HN:.8, RS:.8, SW:1, MD:1.6, WG:1.6, ST:1.8, DP:1.8 };        // who gets thrown to
+const GOAL_W = { HN:.3, RS:.4, SW:.6, MD:1.2, WG:1.4, ST:2.2, DP:2.6 };        // who catches the goals
+const thrower = pl => wPick(pl, p => THROW_W[p.pos] * (.5 + p.thr / 10));
+// hand out the last possession to players: sides are { pl, box (goals), pb (other stats) }; def may be null
+function creditPoss(off, def){
+  const P = lastPoss; if (!P || !off.pl.length) return;
+  for (let i = 0; i < P.cmp; i++) {
+    const t = thrower(off.pl), last = P.goal && i === P.cmp - 1;
+    const r = wPick(off.pl.filter(p => p !== t), p => (last ? GOAL_W : CATCH_W)[p.pos] * (.5 + p.cat / 10));
+    const tb = pbFor(off.pb, t); tb.att++; tb.cmp++; pbFor(off.pb, r).rec++;
+    if (last) { tb.ast++; off.box[r.id] = (off.box[r.id] || 0) + 1; }
+  }
+  if (P.to) {
+    const t = thrower(off.pl), tb = pbFor(off.pb, t); tb.att++; tb.to++;
+    if (P.d && def && def.pl.length) pbFor(def.pb, wPick(def.pl, p => p.spd + p.cat)).d++;
+  }
+}
+// add one game's box score to each player's season and career lines
+function addStats(players, box, pb){
+  for (const p of players) {
+    p.s ||= {}; p.c ||= {};
+    for (const o of [p.s, p.c]) {
+      o.gp = (o.gp || 0) + 1; o.pts = (o.pts || 0) + (box[p.id] || 0);
+      const b = pb[p.id]; if (b) for (const k in b) o[k] = (o[k] || 0) + b[k];
+    }
+  }
+}
+// the other team in a game you played live: build a believable box score that adds up to their final score
+function fakeBox(players, score){
+  const box = {}, pb = {}, side = { pl:players, box, pb };
+  for (let g = 0; g < score; g++) { lastPoss = { cmp:ri(2, 6), to:false, d:false, goal:true }; creditPoss(side, null); }
+  for (let i = ri(5, 10); i > 0; i--) { lastPoss = { cmp:ri(0, 3), to:true, d:false, goal:false }; creditPoss(side, null); }
+  for (let i = ri(1, 4); i > 0; i--) pbFor(pb, wPick(players, p => p.spd + p.cat)).d++;
+  addStats(players, box, pb);
+}
+/* Game speed sets how long a game is: at 5x a played game has twice the possessions of 10x, at 15x two thirds. The
+   speed is picked before the game and every simulated game that week uses the same one, so the whole league's
+   stats stay comparable with ours whatever speed we play at. */
+const SIM_POSS_10X = 14;                                              // possessions per team in a simulated game at 10x
+const simPoss = () => Math.max(5, Math.round(SIM_POSS_10X * 10 / ((G && G.speed) || 10)));
+function simScore(h, a, hMeter, aMeter, hBox = null, hPb = null, aBox = null, aPb = null){
+  const H = teamR(h), A = teamR(a);
+  const side = (t, box, pb) => ({ t, pl:teamPlayers(t), box:box || {}, pb:pb || {} });
+  const hS = side(h, hBox, hPb), aS = side(a, aBox, aPb);
+  const go = (o, d, O, D) => { const pts = simPossession(O, D); creditPoss(o, d); return pts; };
+  let hs = 0, as = 0;
+  const n = simPoss();
+  for (let i = 0; i < n; i++) { hs += go(hS, aS, H, A); as += go(aS, hS, A, H); }
+  while (hs === as) { hs += go(hS, aS, H, A); as += go(aS, hS, A, H); }
+  // computer teams book their own stats; yours go through applyResult
+  for (const S of [hS, aS]) if (!S.t.user) addStats(S.pl, S.box, S.pb);
+  return [hs, as];
+}
+function record(h, a, hs, as){ h.pf += hs; h.pa += as; a.pf += as; a.pa += hs; if (hs > as) { h.w++; a.l++; } else { a.w++; h.l++; } }
+const byRecord = (x, y) => (y.w - y.l) - (x.w - x.l) || (y.pf - y.pa) - (x.pf - x.pa);
+const standings = () => [...G.league].sort(byRecord);
+const confStandings = conf => G.league.filter(t => t.conf === conf).sort(byRecord);
+const ROUND_SHORT = { 'Play-in':'PLAY-IN', 'First round':'ROUND 1', 'Conference semifinal':'SEMIS', 'Conference final':'CONF FINAL', 'The Finals':'FINALS' };
+const ROUND_NAME = ['Play-in', 'First round', 'Conference semifinal', 'Conference final', 'The Finals'];
+
+/* ============================ after a game ============================ */
+// Home games: fans fill the arena; every $100 over a $150 ticket keeps about 14% of seats empty.
+// Each fan in the building also buys food, and every 2.5 fans park one car; how much they spend is the Food & Parking level.
+const TICKET_MIN = 100, TICKET_MAX = 800, TICKET_FAIR = 150, FANS_PER_CAR = 2.5;
+const attendance = () => clamp(G.fans / 100 - (G.ticket - TICKET_FAIR) / 700, 0, 1);   // 50% fans = 50% full at a fair price; overpricing can empty it
+function homeGate(){
+  const att = attendance(), crowd = Math.round(seats(G.fac.arena) * att);
+  const tickets = crowd * G.ticket / 1e6, food = crowd * foodPer() / 1e6, parking = Math.round(crowd / FANS_PER_CAR) * parkPer() / 1e6;
+  return { att, crowd, tickets, food, parking, total:tickets + food + parking };
+}
+// salary cap: $20M to start, +$10M per 25 credits, up to $70M
+const CAP_START = 28, CAP_MAX = 98, CAP_STEP = 14, CAP_COST = 25;   // seven salaries, so 1.4x the five-man numbers
+const capNow = () => G.cap || CAP_START;
+// training a stat doubles each time: 2, 4, 8, 16, 32 CR... (p.tr counts points trained per stat), so one bad player
+// can't cheaply be turned into an elite shooter
+const trainCost = (p, k) => 2 * Math.pow(2, (p.tr || {})[k] || 0);
+// credits per game: 2 under 20% fans, then +1 for every 20% (20-40% is 3, ... 80-100% is 6)
+const gameCredits = () => 2 + Math.floor(Math.min(G.fans, 99.9) / 20);
+// every game each player is paid 1/17 of his yearly salary (14 regular-season games + about 3 playoff games; a play-in team that goes all the way plays 5)
+const PAY_GAMES = 17;
+const perGame = p => p.sal / PAY_GAMES;
+// to sign someone you need the cash to pay him for the rest of this season
+// free agents want a signing bonus in cash up front: $250K at 1 star up to $2.5M at 5 stars, to the nearest $50K
+const signBonus = p => Math.round((.25 + (clamp(starsSmooth(p), 1, 5) - 1) * .5625) * 20) / 20;
+const FAN_WIN = 4, FAN_LOSS = -4, FAN_NEW = 1, NEW_GAMES = 3, FAN_MIN = 15;
+const FAN_OFFSEASON = 15;                                            // fans lost between seasons (user, 2026-10-05): interest cools, win them back
+function pbFor(pbox, p){ return pbox[p.id] ||= { ast:0, cmp:0, att:0, rec:0, d:0, to:0 }; }
+// credit one simulated possession to our players
+function simCredit(box, pbox){ creditPoss({ pl:rosterArr(), box, pb:pbox }, null); }
+function applyResult(M, us, them, box, pbox = {}){
+  const win = us > them, t = userTeam();
+  if (M.kind === 'regular') M.home ? record(t, M.opp, us, them) : record(M.opp, t, them, us);
+  const H = M.home ? homeGate() : { att:0, crowd:0, tickets:0, food:0, parking:0, total:0 };   // before fans change
+  const att = H.att, gate = H.tickets;
+  const tv = tvDeal(M.home);                                        // fans going into the game + star power on the roster
+  G.cash += H.total + tv.total; G.fin.gate += gate; G.fin.tv += tv.total;
+  G.fin.food = (G.fin.food || 0) + H.food; G.fin.parking = (G.fin.parking || 0) + H.parking;
+  const cr = gameCredits();                                         // by fans going into the game
+  G.credits += cr;
+  const pay = rosterArr().map(p => ({ name:`${p.fn[0]}. ${p.ln}`, pos:p.pos, amt:perGame(p) }));
+  const salaries = pay.reduce((s, x) => s + x.amt, 0);
+  G.cash -= salaries; G.fin.salaries = (G.fin.salaries || 0) + salaries;
+  G.gpSeason = (G.gpSeason || 0) + 1;
+  // fans: the result, plus 1% for each newly signed player's first 3 games
+  const newBoost = (G.boosts || []).length * FAN_NEW;
+  G.boosts = (G.boosts || []).map(n => n - 1).filter(n => n > 0);
+  // fans react to the matchup: +4 for a win / -4 for a loss, plus 1% for every half star the other team was better
+  // (minus 1% for every half star worse). Every result moves fans at least 2%, and a loss never costs more than 7%.
+  const upset = Math.round((teamR(M.opp).stars - userRatings().stars) / .5);
+  const mk = G.fac.marketing - 1;                                   // Marketing: wins bring more fans, losses cost fewer
+  const fanResult = Math.round((win ? Math.max(2, FAN_WIN + upset) : clamp(FAN_LOSS + upset, -7, -2)) * (win ? 1 + MKT_WIN * mk : 1 - MKT_LOSS * mk) * 10) / 10;   // to 0.1%, so every Marketing level counts
+  const fansBefore = G.fans;
+  G.fans = clamp(G.fans + fanResult + newBoost, FAN_MIN, 100);
+  for (const p of rosterArr()) { p.gp++; p.pts += box[p.id] || 0; }
+  addStats(rosterArr(), box, pbox);                                 // this season, and career
+  const top = Object.entries(box).map(([id, pts]) => [rosterArr().find(p => p.id === id), pts]).filter(x => x[0]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  G.last = { opp:M.opp.id, home:M.home, us, them, win, gate, tv:tv.total, tvFans:tv.fans, tvStars:tv.stars, tvFanPct:Math.round(fansBefore), oppSt:teamR(M.opp).stars, ourSt:userRatings().stars, cr, pay, salaries, fanResult, newBoost, fansBefore, fans:G.fans, cash:G.cash, att, crowd:H.crowd, food:H.food, parking:H.parking, kind:M.kind, round:M.kind === 'playoffs' ? M.label : '', top:top.map(([p, pts]) => ({ name:`${p.fn[0]}. ${p.ln}`, pos:p.pos, pts })) };
+}
+function userPlaysThisWeek(){ return G.schedule[G.week]?.some(g => g.h === 'U' || g.a === 'U'); }
+function skipByes(){ while (G.phase === 'regular' && G.week < G.schedule.length && !userPlaysThisWeek()) finishWeek(); }
+function finishWeek(){
+  for (const g of G.schedule[G.week]) {
+    if (g.h === 'U' || g.a === 'U') continue;
+    const h = teamById(g.h), a = teamById(g.a), [hs, as] = simScore(h, a);
+    record(h, a, hs, as);
+  }
+  G.week++;
+  if (G.week >= G.schedule.length) startPlayoffs();
+}
+
+/* ============================ playoffs + offseason ============================ */
+/* Playoffs (same format as Retro Basket), every tie a single game. The top 10 in each conference get in:
+     round 0  play-in: 9 v 10 (the winner plays the 1 seed) and 7 v 8 (the winner plays the 2 seed)
+     round 1  first round: 1 v 9/10, 4 v 5, 3 v 6, 2 v 7/8      round 2  conference semis
+     round 3  conference finals                                round 4  the Finals
+   P.games is the round being played (East first, then West), P.hist[round] = [home, away, winner] for the rounds done. */
+const PO_LAST = 4;
+function startPlayoffs(){
+  const E = confStandings('E').slice(0, 10).map(t => t.id), W = confStandings('W').slice(0, 10).map(t => t.id);
+  G.phase = 'playoffs';
+  G.playoffs = { v:2, round:0, E, W, seeds:[...E, ...W], games:[[E[8], E[9]], [E[6], E[7]], [W[8], W[9]], [W[6], W[7]]], hist:[], out:[], champ:null, reached:-1, userOut:false };
+  G.playoffs.userOut = !G.playoffs.seeds.includes('U');
+  playoffByes();
+}
+function nextPlayoffGame(){
+  const P = G.playoffs;
+  if (P.round > PO_LAST || P.userOut) return null;
+  return P.games.find(m => m.includes('U')) || null;
+}
+// a round we're alive in but don't play: seeds 1-6 sit out the play-in
+function playoffByes(){
+  const P = G.playoffs;
+  while (G.phase === 'playoffs' && !P.userOut && !P.games.some(m => m.includes('U'))) playoffRound(null);
+}
+// play out the current round (our game uses userWinner), then set up the next one
+function playoffRound(userWinner){
+  const P = G.playoffs;
+  const sim = (h, a) => { const [hs, as] = simScore(teamById(h), teamById(a)); return hs > as ? h : a; };
+  const w = P.games.map(([h, a]) => (userWinner && (h === 'U' || a === 'U')) ? userWinner : sim(h, a));
+  const l = P.games.map(([h, a], i) => w[i] === h ? a : h);
+  P.hist[P.round] = P.games.map(([h, a], i) => [h, a, w[i]]);
+  if (P.games.some(m => m.includes('U'))) P.reached = P.round;
+  P.out.push(...l);
+  if (P.round === PO_LAST) {
+    P.champ = w[0]; P.round++; P.userOut = P.out.includes('U');
+    if (P.reached === PO_LAST) {
+      if (P.champ === 'U') { G.cash += 3; G.fin.bonus += 3; G.credits += 10; }
+      else { G.cash += 1; G.fin.bonus += 1; }
+    }
+    startOffseason(); return;
+  }
+  if (P.round === 0) P.games = ['E', 'W'].flatMap((c, i) => { const S = P[c]; return [[S[0], w[i * 2]], [S[3], S[4]], [S[2], S[5]], [S[1], w[i * 2 + 1]]]; });
+  else P.games = w.flatMap((x, i) => i % 2 ? [] : [[x, w[i + 1]]]);
+  if (P.round === PO_LAST - 1) P.games[0].sort((x, y) => byRecord(teamById(x), teamById(y)));   // the better record hosts the Finals
+  P.userOut = P.out.includes('U');
+  P.round++;
+}
+function resolvePlayoffs(userWinner){
+  if (userWinner) { playoffRound(userWinner); playoffByes(); return; }
+  while (G.phase === 'playoffs') playoffRound(null);
+}
+function finishText(){
+  const P = G.playoffs;
+  if (P.champ === 'U') return 'Champions';
+  if (P.reached === 4) return 'Lost in the Finals';
+  if (P.reached === 3) return 'Lost in the conference final';
+  if (P.reached === 2) return 'Lost in the conference semis';
+  if (P.reached === 1) return 'Lost in the first round';
+  if (P.reached === 0) return 'Lost in the play-in';
+  return 'Missed the playoffs';
+}
+/* The bracket, East on the left and West on the right, the Finals in the middle. During the regular season it is
+   the bracket as the standings have it today; in the playoffs (and after them) it is the real one with results. */
+const PO_N = [2, 4, 2, 1];                                            // games per conference in rounds 0-3
+function bracketNow(){
+  const P = G.playoffs;
+  if (P && P.v === 2) return P;
+  const E = confStandings('E').slice(0, 10).map(t => t.id), W = confStandings('W').slice(0, 10).map(t => t.id);
+  return { round:0, E, W, games:[[E[8], E[9]], [E[6], E[7]], [W[8], W[9]], [W[6], W[7]]], hist:[], champ:null, projected:true };
+}
+// the games of one round for one conference (ci 0 = East, 1 = West): [home, away, winner]; null = not known yet
+function bracketGames(P, ci, r){
+  const n = PO_N[r], S = ci ? P.W : P.E;
+  if (r < P.round && P.hist[r]) return P.hist[r].slice(ci * n, ci * n + n);
+  if (r === P.round) return P.games.slice(ci * n, ci * n + n).map(([h, a]) => [h, a, null]);
+  if (r === 1) return [[S[0], null, null], [S[3], S[4], null], [S[2], S[5], null], [S[1], null, null]];
+  return Array.from({ length:n }, () => [null, null, null]);
+}
+function bracketHTML(){
+  const P = bracketNow();
+  const seed = id => (P.E.indexOf(id) + 1) || (P.W.indexOf(id) + 1);
+  const line = (id, w, tbd) => id === null || id === undefined ? `<div class="tbd"><span class="sd"></span><span>${tbd}</span></div>`
+    : `<div class="${w ? (w === id ? 'w' : 'l') : ''} ${id === 'U' ? 'me' : ''}"><span class="sd num">${seed(id)}</span><span>${esc(teamById(id).abbr)}</span></div>`;
+  const game = ([h, a, w], tbd = '–') => `<div class="bm">${line(h, w, tbd)}${line(a, w, tbd)}</div>`;
+  const col = (label, games, tbd, cls = '') => `<div class="bcol ${cls}"><div class="bh">${label}</div><div class="bms">${games.map(g => game(g, tbd)).join('')}</div></div>`;
+  // the play-in games sit level with the first-round game their winner goes into: 9 v 10 by the 1 seed, 7 v 8 by the 2 seed
+  const side = ci => [col('Play-in', bracketGames(P, ci, 0), '–', 'bpi'), col('Round 1', bracketGames(P, ci, 1), 'Play-in'),
+    col('Semis', bracketGames(P, ci, 2)), col(ci ? 'West final' : 'East final', bracketGames(P, ci, 3))];
+  const fin = P.round > PO_LAST && P.hist[PO_LAST] ? P.hist[PO_LAST][0] : P.round === PO_LAST ? [...P.games[0], null] : [null, null, null];
+  const champ = P.champ ? teamById(P.champ) : null;
+  const mid = `<div class="bcol bfin"><div class="bh">Finals</div><div class="bms">${game(fin)}${champ ? `<div class="bchamp ${champ.user ? 'yellow' : ''}">🏆 ${esc(champ.abbr)}</div>` : ''}</div></div>`;
+  return `${topBar(P.projected ? 'Projected bracket' : 'Playoff bracket', `<button class="btn icon" data-go="league" aria-label="Back">✕</button>`)}
+    <div class="panel brk">${side(0).join('')}${mid}${side(1).reverse().join('')}</div>
+    <div class="muted fanote" style="font-size:12px;margin-top:6px">${P.projected ? 'If the season ended today. ' : ''}East on the left, West on the right. Play-in: the 9 v 10 winner plays the 1 seed, the 7 v 8 winner plays the 2 seed.</div>`;
+}
+function grow(p, steps){
+  let guard = 0;
+  while (steps !== 0 && guard++ < 60) {
+    const k = pick(RATE), s = Math.sign(steps);
+    if (s > 0 && (p[k] >= 10 || pAvg(p) + .25 > p.pot)) { if (pAvg(p) + .25 > p.pot) break; continue; }
+    if (s < 0 && p[k] <= 1) continue;
+    p[k] += s; steps -= s;
+  }
+}
+function startOffseason(){
+  const t = userTeam(), finish = finishText();
+  const champ = teamById(G.playoffs.champ);
+  G.history.unshift({ season:G.season, w:t.w, l:t.l, finish, champ:`${champ.city} ${champ.name}` });
+  const changes = [], retired = [];
+  const tf = 1;
+  for (const pos of POS) {
+    const p = G.roster[pos]; if (!p) continue;
+    const before = pStars(p);
+    let s = p.age <= 21 ? ri(2, 4) : p.age <= 24 ? ri(1, 3) : p.age <= 28 ? ri(0, 1) : p.age <= 31 ? ri(-2, 0) : ri(-3, -1);
+    if (s > 0) s = Math.round(s * tf);
+    grow(p, s); p.age++; p.gp = p.pts = 0; p.s = {};
+    if (p.age >= 34 && Math.random() < (p.age - 33) * .3) { retired.push(`${p.fn} ${p.ln} (${pos}, age ${p.age})`); G.roster[pos] = null; continue; }
+    if (pStars(p) !== before) changes.push({ name:`${p.fn} ${p.ln}`, pos, from:before, to:pStars(p) });
+    p.yrs--;
+  }
+  for (const tm of G.league) if (!tm.user) tm.players = tm.players.map(p => {
+    grow(p, p.age <= 22 ? ri(1, 3) : p.age <= 26 ? ri(0, 2) : p.age <= 30 ? ri(-1, 1) : p.age <= 33 ? ri(-2, 0) : ri(-3, -1)); p.age++;
+    if (p.age >= 38 && Math.random() < .5) { const r = makePlayer(p.pos, rnd(4, 6.5), ri(22, 27)); r.sal = askSalary(r); r.yrs = 2; return r; }
+    return p;
+  });
+  const order = standings().reverse().map(x => x.id);
+  const prospects = [];
+  [...POS, ...shuffle([...POS]).slice(0, 3)].forEach(pos => { for (let i = 0; i < 1; i++) { const p = makePlayer(pos, rnd(2.5, 5.5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1.5, 4.5)) * 2) / 2); p.sal = Math.max(1, Math.round(askSalary(p)) / 2); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); prospects.push(p); } });
+  G.phase = 'offseason';
+  const fansWas = G.fans; G.fans = Math.max(FAN_MIN, G.fans - FAN_OFFSEASON);
+  G.off = { step:'summary', finish, champ:`${champ.city} ${champ.name}`, record:`${t.w}-${t.l}`, fansWas, fansNow:G.fans, changes, retired, order, prospects, picks:2, round:1, fin:{ ...G.fin } };
+  save();
+}
+function startNewSeason(){
+  for (const pos of POS) if (!G.roster[pos]) { const p = makePlayer(pos, rnd(2, 3), ri(22, 30)); p.sal = 1; p.yrs = 1; G.roster[pos] = p; }
+  G.season++; G.week = 0; G.phase = 'regular'; G.playoffs = null; G.off = null; G.last = null; G.results = [];
+  for (const t of G.league) t.w = t.l = t.pf = t.pa = 0;
+  for (const p of [...G.league.flatMap(t => t.players || []), ...rosterArr(), ...G.fa, ...(G.pool || [])]) p.s = {};
+  G.schedule = confSchedule(G.league);
+  G.fin = { gate:0, tv:0, bonus:0, spend:0, salaries:0 }; G.gpSeason = 0;
+  // most unsigned free agents move on; legends go back to the waiting pool so they can come around again
+  const left = G.fa.filter(() => Math.random() >= .4); G.fa = G.fa.filter(p => !left.includes(p));
+  G.pool = []; refillFA(FA_SIZE);
+  save();
+}
+
+/* ============================ portraits ============================ */
+const portraitCache = {};
+function portrait(p, c1){
+  const key = [p.id, c1, p.style, p.skin, p.hair, p.band, p.face].join('|');
+  if (portraitCache[key]) return portraitCache[key];
+  const S = 20, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const c = cv.getContext('2d'), f = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
+  const O = '#1a1426', sh = shade(p.skin, -.16), hi = shade(p.skin, .12), H = p.hair;
+  const st = p.style === 'headband' ? 'bald' : p.style, band = p.band || p.style === 'headband', face = p.face || '';
+  f(2, 15, 16, 5, O); f(3, 16, 14, 4, c1); f(8, 16, 4, 1, '#ffffff');        // shoulders + jersey
+  f(8, 13, 4, 3, O); f(9, 13, 2, 3, p.skin);                                // neck
+  if (st === 'long') { f(4, 2, 12, 11, O); f(5, 3, 10, 9, H); }             // hair behind the head, down past the ears
+  f(5, 3, 10, 11, O); f(6, 4, 8, 9, p.skin); f(5, 7, 1, 3, p.skin); f(14, 7, 1, 3, p.skin);
+  if (st === 'bald') f(8, 4, 3, 1, hi);                                      // shine
+  if (st === 'buzz') { f(6, 4, 8, 1, H); f(6, 5, 1, 1, H); f(13, 5, 1, 1, H); }
+  if (st === 'fade') { f(6, 3, 8, 2, H); f(6, 5, 1, 2, sh); f(13, 5, 1, 2, sh); }
+  if (st === 'afro') { f(4, 1, 12, 5, O); f(5, 1, 10, 5, H); f(4, 5, 2, 3, H); f(14, 5, 2, 3, H); }
+  if (st === 'curly') { f(5, 2, 10, 4, O); f(6, 2, 8, 3, H); [6, 8, 10, 12].forEach(x => f(x, 1, 1, 1, H)); f(5, 5, 1, 2, H); f(14, 5, 1, 2, H); }
+  if (st === 'long') { f(5, 2, 10, 3, O); f(6, 2, 8, 3, H); f(6, 5, 3, 1, H); f(5, 4, 1, 8, H); f(14, 4, 1, 8, H); }
+  if (st === 'cornrows') { f(5, 2, 10, 3, O); f(6, 3, 8, 2, H); [7, 9, 11].forEach(x => f(x, 3, 1, 2, sh)); f(6, 5, 1, 1, H); f(13, 5, 1, 1, H); }
+  if (st === 'hitop') { f(5, 0, 10, 5, O); f(6, 0, 8, 5, H); f(6, 5, 1, 1, sh); f(13, 5, 1, 1, sh); }
+  if (band) { f(5, 5, 10, 1, O); f(6, 5, 8, 1, '#ffffff'); }
+  f(7, 8, 2, 1, '#ffffff'); f(11, 8, 2, 1, '#ffffff'); f(8, 8, 1, 1, O); f(12, 8, 1, 1, O);
+  f(7, 7, 2, 1, O); f(11, 7, 2, 1, O);
+  if (face.includes('unibrow')) f(9, 7, 2, 1, O);
+  f(9, 10, 2, 1, 'rgba(0,0,0,.25)');
+  if (face.includes('beard')) { f(6, 9, 1, 3, H); f(13, 9, 1, 3, H); f(6, 11, 8, 2, H); f(7, 12, 6, 1, H); }
+  if (face.includes('goatee')) { f(8, 12, 4, 1, H); f(8, 10, 4, 1, H); }
+  if (face.includes('stache')) f(8, 10, 4, 1, H);
+  f(8, 11, 4, 1, '#8a3b2e');                                                 // mouth, on top of any beard
+  if (face.includes('goggles')) { f(5, 7, 10, 1, O); f(6, 7, 3, 2, O); f(11, 7, 3, 2, O); f(7, 7, 2, 1, '#bfe3ff'); f(11, 7, 2, 1, '#bfe3ff'); f(7, 8, 1, 1, '#bfe3ff'); f(12, 8, 1, 1, '#bfe3ff'); }
+  return portraitCache[key] = cv.toDataURL();
+}
+
+/* ============================ UI ============================ */
+let screen = 'hub', sel = null;
+const badge = (t, cls = '') => `<div class="badge ${cls}" style="background:${t.c1};border-color:${t.c2};color:${t.c2}">${esc(t.abbr)}</div>`;
+function topBar(title, right = ''){
+  return `<div class="bar"><div class="box num">${G.credits} <span class="yellow">CR</span></div><div class="title">${title}</div><div class="row" style="gap:6px">${right || `<div class="box num ${G.cash < 0 ? 'debt' : ''}">${money(G.cash)}</div>`}</div></div>`;
+}
+function card(p, opts = {}){
+  const t = userTeam();
+  return `<button class="card ${opts.dim ? 'dim' : ''}" ${opts.attr || ''}>
+    <div class="top ${posColor(p.pos)}"><span class="pos">${p.pos}</span><span class="age">${p.age}</span><img src="${portrait(p, t.c1)}" alt=""></div>
+    <div class="bot"><div class="fnm">${esc(p.fn)}</div><div class="nm">#${p.num} ${esc(p.ln)}</div><div>${starsHTML(opts.stars ?? pStars(p))}</div>${opts.fa ? `<div class="fa-x">
+      <div><span><span class="lg">Salary:</span><span class="sh">Sal</span></span><b class="num">${money(askSalary(p))}<span class="lg"> × </span><span class="sh">×</span>${askYears(p)}yr</b></div>
+      <div><span><span class="lg">Signing bonus:</span><span class="sh">Bonus</span></span><b class="num">${money(signBonus(p))}</b></div>
+      <div><span><span class="lg">Per game:</span><span class="sh">/game</span></span><b class="num">${money(askSalary(p) / PAY_GAMES)}</b></div></div>`
+    : `<div class="sal">${money(p.sal || askSalary(p))}${opts.yrs ? `<span class="muted"> ×${p.yrs}</span>` : ''}</div>`}</div>
+    ${opts.flag ? `<div class="flag">${opts.flag}</div>` : ''}
+  </button>`;
+}
+function capBar(extra = ''){
+  const pr = payroll();
+  return `<div class="capbar"><div class="cap"><div class="t">SALARY CAP <span class="num">${money(pr)} / ${money(capNow())}</span></div><div class="track"><i style="width:${clamp(pr / capNow() * 100, 0, 100)}%"></i></div></div>${extra}</div>`;
+}
+
+function render(){
+  const ui = $('#ui');
+  if (SLOT === null || screen === 'slots') { ui.innerHTML = slotsHTML(); ui.dataset.screen = 'slots'; ui.scrollTop = 0; return; }
+  if (!G) { ui.innerHTML = createHTML(); bindCreate(); ui.dataset.screen = 'create'; ui.scrollTop = 0; return; }
+  if (G.phase === 'playoffs' && G.playoffs && G.playoffs.v !== 2) startPlayoffs();   // a save from the old top-4 format: start the new bracket
+  const f = { kit:kitHTML, roster:rosterHTML, player:playerHTML, league:leagueHTML, bracket:bracketHTML, office:officeHTML, fa:faHTML, leaders:leadersHTML, post:postHTML, draft:draftHTML }[screen] || hubHTML;
+  ui.innerHTML = f();
+  window.scrollTo(0, 0); ui.scrollTop = 0;                           // the phone app scrolls #ui, not the page
+  ui.dataset.screen = G ? screen : 'create';                         // only the stats list may scroll (see the phone CSS)
+}
+
+let createColor = 0;
+let pickedTeam = null;
+function createHTML(){
+  const col = conf => TEAMS.filter(T => T.conf === conf).sort((a, b) => a.city.localeCompare(b.city)).map(T => `
+    <button class="tpick ${pickedTeam === T.abbr ? 'on' : ''}" data-team="${T.abbr}">
+      <span class="badge sm" style="background:${T.c1};border-color:${T.c2};color:${T.c2 === '#000000' ? '#fff' : T.c2}">${T.abbr}</span>
+      <span class="tn">${esc(T.city)}<br><b>${esc(T.name)}</b></span></button>`).join('');
+  const T = TEAMS.find(x => x.abbr === pickedTeam);
+  return `<div class="title" style="margin-bottom:8px">RETRO DISC</div>
+    <div class="muted intro" style="text-align:center;margin-bottom:10px">Pick your club. You take it over with seven 1-star players and build from there: sign free agents, train your players, win the league.</div>
+    <div class="hub"><div class="panel"><div class="label" style="margin-bottom:6px">East</div><div class="tgrid">${col('E')}</div></div>
+    <div class="panel"><div class="label" style="margin-bottom:6px">West</div><div class="tgrid">${col('W')}</div></div></div>
+    <div class="row" style="margin-top:10px"><button class="btn" data-a="toSlots">Saves</button><div class="grow muted">Slot ${SLOT} · ${T ? `${esc(T.city)} ${esc(T.name)} · ${T.conf === 'E' ? 'Eastern' : 'Western'} Conference` : 'Tap a team.'}</div><button class="btn go" id="cGo" ${T ? '' : 'disabled'}>Take the job</button></div>`;
+}
+// the first screen: three save slots, each with Play (or New game) and Reset
+function slotsHTML(){
+  const cards = [1, 2, 3].map(n => {
+    const s = slotInfo(n);
+    if (!s) return `<div class="panel slot"><div class="label">Slot ${n}</div><div class="slot-empty muted">Empty</div>
+      <button class="btn go" data-a="slotPlay" data-n="${n}">New game</button></div>`;
+    const where = s.phase === 'offseason' ? 'Offseason' : s.phase === 'playoffs' ? 'Playoffs' : `${s.w}-${s.l}`;
+    return `<div class="panel slot"><div class="label">Slot ${n}</div>
+      <div class="row" style="gap:8px">${badge(s.t, 'sm')}<div class="grow" style="min-width:0"><div class="px slot-team">${esc(s.t.name)}</div><div class="muted" style="font-size:12px">${esc(s.t.city)}</div></div></div>
+      <div class="slot-meta num"><span>Season ${s.season}</span><span>${where}</span><span class="${s.cash < 0 ? 'debt' : ''}">${money(s.cash)}</span></div>
+      <div class="row" style="gap:6px"><button class="btn go grow" data-a="slotPlay" data-n="${n}">Play</button><button class="btn red sm" data-a="slotReset" data-n="${n}">Reset</button></div></div>`;
+  }).join('');
+  return `<div class="title" style="margin-bottom:10px">RETRO BASKET</div><div class="slots">${cards}</div>
+    <div class="muted" style="text-align:center;font-size:12px;margin-top:10px">Three separate careers. Saves stay on this device.</div>`;
+}
+function bindCreate(){
+  document.querySelectorAll('[data-team]').forEach(b => b.onclick = () => { pickedTeam = b.dataset.team; render(); });
+  const go = $('#cGo'); if (go) go.onclick = () => { if (!pickedTeam) return; newGame(pickedTeam); save(); screen = 'hub'; render(); };
+}
+
+function nextGameInfo(){
+  if (G.phase === 'regular') { skipByes(); if (G.phase !== 'regular') return nextGameInfo(); const u = userTeam(); const g = G.schedule[G.week].find(x => x.h === 'U' || x.a === 'U'); return { opp:teamById(g.h === 'U' ? g.a : g.h), home:g.h === 'U', kind:'regular', label:`Game ${u.w + u.l + 1} of ${SEASON_GAMES}` }; }
+  if (G.phase === 'playoffs') { const m = nextPlayoffGame(); if (!m) return null; return { opp:teamById(m[0] === 'U' ? m[1] : m[0]), home:m[0] === 'U', kind:'playoffs', label:ROUND_NAME[G.playoffs.round] }; }
+  return null;
+}
+function hubHTML(){
+  const t = userTeam(), ur = userRatings();
+  let left;
+  const ng = nextGameInfo();
+  if (ng) {
+    const o = ng.opp, orr = teamR(o);
+    left = `<div class="panel">
+      <div class="row between"><span class="label">${ng.label}</span><span class="label">${ng.home ? 'Home' : 'Away'}</span></div>
+      <div class="vs">
+        <div class="t">${badge(t)}<div class="n">${esc(t.name)}</div>${starsHTML(ur.stars)}<div class="muted num" style="font-size:12px">${t.w}-${t.l}</div></div>
+        <div class="px" style="font-size:18px">VS</div>
+        <div class="t">${badge(o)}<div class="n">${esc(o.name)}</div>${starsHTML(orr.stars)}<div class="muted num" style="font-size:12px">${o.w}-${o.l}</div></div>
+      </div>
+      ${savedLive() ? (L => `<div class="row"><button class="btn go grow" data-a="resume">Resume · <span class="num">${qText(L.q)} ${clockText(L.clock)} · ${L.us}-${L.them}</span></button></div>`)(G.live)
+        : `<div class="row"><button class="btn go grow" data-a="play">Play</button><button class="btn" data-a="sim">Sim</button></div>`}
+    </div>`;
+  } else if (G.phase === 'playoffs') {
+    left = `<div class="panel stack"><div class="label">Playoffs</div><div>${G.playoffs.seeds.includes('U') ? 'Your season is over.' : 'You missed the top 10 in your conference.'}</div><button class="btn go" data-a="simPlayoffs">Sim the playoffs</button></div>`;
+  } else left = offseasonHTML();
+  return `${topBar(`${esc(t.city)} ${esc(t.name)}`)}
+    <div class="hub">
+      <div>${left}
+        <div class="chips">
+          <div class="chip"><span class="label">Record</span><b class="num">${t.w}-${t.l}</b></div>
+          <div class="chip"><span class="label">Fans</span><b class="num">${Math.round(G.fans)}%</b></div>
+          <div class="chip"><span class="label">Season</span><b class="num">${G.season}</b></div>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="btn" data-go="roster">Roster</button>
+        <button class="btn" data-go="league">Standings</button>
+        <button class="btn" data-go="office">Front office</button>
+        <button class="btn" data-go="fa">Free agents</button>
+        <button class="btn" data-go="leaders">League leaders</button>
+        <button class="btn" data-a="settings" ${savedLive() ? 'disabled' : ''}>Game speed ${G.speed}x${savedLive() ? ' 🔒' : ''}</button>
+        <button class="btn" data-a="toSlots" style="grid-column:span 2">Saves · slot ${SLOT}</button>
+        ${G.history.length ? `<div class="panel" style="grid-column:span 2;font-size:13px">${G.history.slice(0, 3).map(h => `<div class="row between"><span>S${h.season} · ${h.w}-${h.l}</span><span class="${h.finish === 'Champions' ? 'yellow' : 'muted'}">${esc(h.finish)}</span></div>`).join('')}</div>` : ''}
+      </div>
+    </div>`;
+}
+function offseasonHTML(){
+  const O = G.off;
+  if (O.step === 'summary') return `<div class="panel stack">
+      <div class="label">Season ${G.season} over</div>
+      <div class="px ${O.finish === 'Champions' ? 'yellow' : ''}" style="font-size:18px">${O.record} · ${esc(O.finish)}</div>
+      <div class="muted" style="font-size:13px">Champions: ${esc(O.champ)}</div>
+      ${O.changes.length ? `<div style="font-size:13px">${O.changes.map(c => `<div class="row between"><span>${c.pos} ${esc(c.name)}</span><span class="${c.to > c.from ? 'good' : 'bad'}">${c.from}★ → ${c.to}★</span></div>`).join('')}</div>` : ''}
+      ${O.fansNow != null ? `<div class="row between" style="font-size:13px"><span>Fans over the summer</span><span class="num">${Math.round(O.fansWas)}% → <b class="bad">${Math.round(O.fansNow)}%</b></span></div>` : ''}
+      ${O.retired.length ? `<div class="bad" style="font-size:13px">Retired: ${esc(O.retired.join(', '))}</div>` : ''}
+      <button class="btn go" data-a="offNext">Contracts</button></div>`;
+  if (O.step === 'resign') {
+    const exp = POS.map(pos => G.roster[pos]).filter(p => p && p.yrs <= 0);
+    return `<div class="panel stack">
+      <div class="label">Expiring contracts</div>
+      ${exp.length ? exp.map(p => `<div class="row between" style="font-size:14px"><span>${p.pos} ${esc(p.fn[0])}. ${esc(p.ln)} ${starsHTML(pStars(p))}</span><span class="row" style="gap:6px"><span class="num"><span class="muted">${money(p.sal)} →</span> ${money(resignPrice(p))}×${askYears(p)}</span><button class="btn sm green" data-a="resign" data-pos="${p.pos}">Sign</button><button class="btn sm" data-a="letgo" data-pos="${p.pos}">Go</button></span></div>`).join('') : '<div class="muted">Nobody to re-sign.</div>'}
+      <button class="btn go" data-a="offNext" ${exp.length ? 'disabled' : ''}>To the draft</button></div>`;
+  }
+  if (O.step === 'draft') return `<div class="panel stack"><div class="label">The draft</div><div class="muted">You have ${O.picks} pick${O.picks === 1 ? '' : 's'} left.</div><button class="btn go" data-go="draft">Open the draft</button></div>`;
+  const empty = POS.filter(pos => !G.roster[pos]);
+  return `<div class="panel stack"><div class="label">Free agency</div>
+    <div class="muted" style="font-size:13px">${empty.length ? `Open spots: ${empty.join(', ')}. Sign someone or a walk-on fills in.` : 'Your five are set.'}</div>
+    <button class="btn" data-go="fa">Free agents</button><button class="btn go" data-a="newSeason">Start season ${G.season + 1}</button></div>`;
+}
+
+function rosterHTML(){
+  return `${topBar('Roster', `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
+    <div class="cards">${POS.map(pos => G.roster[pos] ? card(G.roster[pos], { attr:`data-player="${pos}"`, yrs:true }) : `<div class="card" style="display:grid;place-items:center;min-height:140px"><div class="px">${pos}<br>EMPTY</div></div>`).join('')}</div>
+    ${capBar(`<div class="box" style="text-align:center"><div class="label">Team</div>${starsHTML(userRatings().stars)}</div>`)}
+    <div class="muted" style="margin-top:8px;font-size:13px">Tap a player to train him with credits.</div>`;
+}
+function statLine(o){
+  o = o || {};
+  const gp = o.gp || 0, per = k => gp ? ((o[k] || 0) / gp).toFixed(1) : '–';
+  const frac = (m, a) => a ? `${m}/${a} <span class="muted">(${Math.round(m / a * 100)}%)</span>` : '–';
+  return `<td class="num">${gp}</td><td class="num">${per('pts')}</td><td class="num">${per('ast')}</td><td class="num">${frac(o.cmp || 0, o.att || 0)}</td><td class="num">${per('rec')}</td><td class="num">${per('d')}</td><td class="num">${per('to')}</td>`;
+}
+function playerHTML(){
+  const p = G.roster[sel]; if (!p) { screen = 'roster'; return rosterHTML(); }
+  const t = userTeam();
+  const cost = k => trainCost(p, k);
+  const atPot = false;                                               // training has no ceiling; only natural growth stops at p.pot
+  return `${topBar(`${esc(p.fn)} ${esc(p.ln)}`, `<button class="btn icon" data-go="roster" aria-label="Back">✕</button>`)}
+    <div class="pp">
+      <div class="face"><div class="top ${posColor(p.pos)}"><img src="${portrait(p, t.c1)}" alt=""></div>
+        <div class="bot"><div class="px">${p.pos} · #${p.num}</div>${starsHTML(pStars(p))}<div class="muted num" style="font-size:12px">Age ${p.age} · Max ${potStars(p)}★</div><div class="num" style="font-size:12px">${money(p.sal)} × ${p.yrs}yr</div></div></div>
+      <div>
+        ${RATE.map(k => `<div class="rt"><span class="nm">${RATE_NAME[k]}</span>
+          <div class="segs">${Array.from({ length:10 }, (_, i) => `<i class="${i < p[k] ? 'on' : ''}"></i>`).join('')}</div>
+          <span class="px num" style="text-align:right">${p[k]}/10</span>
+          <button class="btn sm go" data-train="${k}" ${p[k] >= 10 || G.credits < cost(k) ? 'disabled' : ''}>${p[k] >= 10 ? 'MAX' : `+1 · <span class="num">${cost(k)}</span>CR`}</button></div>
+          <div class="muted" style="font-size:12px;margin:-6px 0 8px">${RATE_DESC[k]}</div>`).join('')}
+        <div class="muted" style="font-size:13px">Training starts at <span class="num">2</span> credits a point and doubles for each point in the same stat (<span class="num">2, 4, 8, 16…</span>) (you have <span class="num">${G.credits}</span> CR).${p.gp ? ` ${(p.pts / p.gp).toFixed(1)} goals a game this season.` : ''}</div>
+        <div class="panel" style="margin-top:10px;overflow-x:auto;padding:6px 10px">
+          <div class="label" style="margin-bottom:2px">Stats</div>
+          <table class="pst"><thead><tr><th></th><th>GP</th><th>GOALS</th><th>AST</th><th>THROWS</th><th>CATCH</th><th>INT</th><th>TO</th></tr></thead>
+          <tbody><tr><td>Season</td>${statLine(p.s)}</tr><tr><td>Career</td>${statLine(p.c)}</tr></tbody></table>
+          <div class="muted" style="font-size:11px;margin-top:3px">Everything but throws is per game.</div>
+        </div>
+        <div class="row" style="margin-top:10px"><button class="btn red sm" data-a="release">Release (costs ${money(p.sal * p.yrs * .5)})</button></div>
+      </div>
+    </div>`;
+}
+function draftHTML(){
+  const O = G.off;
+  const err = DRAFT_ERR;
+  return `${topBar(`<span class="st">★★★</span> Draft round ${O.round} <span class="st">★★★</span>`, `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
+    <div class="cards">${O.prospects.map(p => { const shown = { ...p, ...p.scout }; return card(p, { attr:`data-prospect="${p.id}"`, stars:pStars(shown) }); }).join('')}</div>
+    ${capBar(`<button class="btn" data-go="roster">Roster</button><div class="box" style="text-align:center"><div class="label">Picks</div><div class="num">${O.picks}</div></div><button class="btn go icon" data-a="draftDone" aria-label="Done">➜</button>`)}
+    <div class="muted" style="font-size:12px;margin-top:6px">Tap a prospect to see him. Drafting replaces your player at that position. Ratings shown within ±${err}.</div>`;
+}
+let faPos = 'HN';                                                    // free agents are shown one position at a time
+function faHTML(){
+  const room = capNow() - payroll();
+  const list = G.fa.filter(p => p.pos === faPos).sort((a, b) => pAvg(b) - pAvg(a));
+  const tabs = POS.map(pos => `<button class="btn sm ${pos === faPos ? 'go' : ''}" data-a="faPos" data-p="${pos}">${pos}</button>`).join('');
+  return `${topBar('Free agents', `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
+    <div class="row fatabs">${tabs}<span class="muted grow" style="font-size:12px;text-align:right">Your ${faPos}: ${G.roster[faPos] ? `${esc(G.roster[faPos].ln)} ${starsHTML(pStars(G.roster[faPos]))}` : 'empty'}</span></div>
+    <div class="cards farow" style="--n:${Math.max(5, list.length)}">${list.length ? '' : '<div class="muted">No free agents at this position right now.</div>'}${list.map(p => { const need = signBonus(p); const cur = G.roster[p.pos]; const newPay = payroll() - (cur ? cur.sal : 0) + askSalary(p);
+      const why = G.cash < need ? `NEEDS <span class="num">${money(need)}</span> CASH` : newPay > capNow() ? 'NO CAP ROOM' : ''; return card(p, { attr:`data-fa="${p.id}"`, dim:!!why, flag:why, fa:true }); }).join('')}</div>
+    ${capBar(`<div class="box" style="text-align:center"><div class="label">Cash</div><div class="num ${G.cash < 0 ? 'debt' : ''}">${money(G.cash)}</div></div>`)}
+    <div class="muted fanote" style="font-size:12px;margin-top:6px">Signing replaces your player at that position. Bonus is paid up front, then 1/17 of the salary every game. Cap room: <span class="num">${money(room)}</span>.</div>`;
+}
+function leagueHTML(){
+  const table = conf => `<div class="panel" style="overflow-x:auto"><div class="label" style="margin-bottom:4px">${conf === 'E' ? 'East' : 'West'}</div><table><thead><tr><th>Team</th><th>W</th><th>L</th><th>Diff</th><th>Team</th></tr></thead><tbody>
+    ${confStandings(conf).map((t, i) => `<tr class="${t.user ? 'me' : ''} ${i === 6 || i === 10 ? 'cut' : ''}"><td>${i + 1}. ${esc(t.abbr)} ${esc(t.name)}</td><td class="num">${t.w}</td><td class="num">${t.l}</td><td class="num">${t.pf - t.pa > 0 ? '+' : ''}${t.pf - t.pa}</td><td>${starsHTML(teamR(t).stars)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  return `${topBar('Standings', `<button class="btn" data-go="bracket">Bracket</button><button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
+    <div class="hub">${table('E')}${table('W')}</div><div class="muted fanote" style="font-size:12px;margin-top:6px">Top 6 in each conference make the playoffs; 7th to 10th go to the play-in.</div>`;
+}
+// every player on a team this season, ranked by any stat; per-game stats and percentages from p.s
+const LCOLS = [
+  { k:'gp', h:'GP', v:o => o.gp || 0, f:v => v },
+  { k:'ppg', h:'GOALS', v:o => o.gp ? (o.pts || 0) / o.gp : null, f:v => v.toFixed(1) },
+  { k:'apg', h:'AST', v:o => o.gp ? (o.ast || 0) / o.gp : null, f:v => v.toFixed(1) },
+  { k:'cmp', h:'CMP%', v:o => o.att ? o.cmp / o.att : null, f:v => (v * 100).toFixed(1) },
+  { k:'rec', h:'CATCH', v:o => o.gp ? (o.rec || 0) / o.gp : null, f:v => v.toFixed(1) },
+  { k:'dpg', h:'INT', v:o => o.gp ? (o.d || 0) / o.gp : null, f:v => v.toFixed(1) },
+  { k:'tov', h:'TO', v:o => o.gp ? (o.to || 0) / o.gp : null, f:v => v.toFixed(1) },
+  { k:'pts', h:'TOTAL', v:o => o.pts || 0, f:v => v },
+];
+const lead = { k:'ppg', asc:false, pos:'', team:'' };                // team '*' = one row per team, its players' stats added up
+const LSUM = ['pts', 'ast', 'cmp', 'att', 'rec', 'd', 'to'];
+function teamTotals(t){
+  const o = { gp:t.w + t.l };
+  teamPlayers(t).forEach(p => LSUM.forEach(k => o[k] = (o[k] || 0) + ((p.s || {})[k] || 0)));
+  return o;
+}
+function leadersHTML(){
+  const col = LCOLS.find(c => c.k === lead.k) || LCOLS[1];
+  const byTeam = lead.team === '*';
+  let rows = byTeam ? G.league.map(t => ({ t, o:teamTotals(t) })) : G.league.flatMap(t => teamPlayers(t).map(p => ({ p, t, o:p.s || {} })));
+  if (lead.pos && !byTeam) rows = rows.filter(r => r.p.pos === lead.pos);
+  if (lead.team && !byTeam) rows = rows.filter(r => r.t.abbr === lead.team);
+  rows.forEach(r => r.v = col.v(r.o));
+  // players with nothing to rank on (no attempts, no games) always sit at the bottom
+  rows.sort((a, b) => (a.v === null) - (b.v === null) || (lead.asc ? a.v - b.v : b.v - a.v) || (byTeam ? b.t.w - a.t.w : pAvg(b.p) - pAvg(a.p)));
+  const teams = [...G.league].sort((a, b) => a.abbr.localeCompare(b.abbr));
+  const opt = (v, label, cur) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${esc(label)}</option>`;
+  return `${topBar('League leaders', `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
+    <div class="lfilt">
+      <select id="lPos" aria-label="Position" ${byTeam ? 'disabled' : ''}>${opt('', 'All positions', lead.pos)}${POS.map(p => opt(p, p, lead.pos)).join('')}</select>
+      <select id="lTeam" aria-label="Team">${opt('', 'All teams', lead.team)}${opt('*', 'Team totals', lead.team)}${teams.map(t => opt(t.abbr, `${t.abbr} ${t.name}${t.user ? ' (you)' : ''}`, lead.team)).join('')}</select>
+      <span class="muted grow" style="font-size:12px;align-self:center">Season ${G.season} · tap a column to rank by it, tap again to flip</span>
+    </div>
+    <div class="panel" style="overflow-x:auto;padding:6px 8px">
+      <table class="lt"><thead><tr><th>#</th><th style="text-align:left">${byTeam ? 'Team' : 'Player'}</th><th style="text-align:left">${byTeam ? 'W-L' : 'Team'}</th><th>★</th>
+        ${LCOLS.map(c => `<th><button data-a="lsort" data-k="${c.k}" class="${c.k === col.k ? 'on' : ''}">${c.h}${c.k === col.k ? (lead.asc ? '▲' : '▼') : ''}</button></th>`).join('')}</tr></thead>
+      <tbody>${rows.map((r, i) => `<tr class="${r.t.user ? 'me' : ''} ${r.o.gp ? '' : 'zero'}"><td class="num">${i + 1}</td>
+        ${byTeam ? `<td class="nm2">${esc(r.t.abbr)} ${esc(r.t.name)}</td><td class="tm">${r.t.w}-${r.t.l}</td><td class="num">${teamR(r.t).stars}</td>`
+          : `<td class="nm2">${r.p.pos} ${esc(r.p.fn)} ${esc(r.p.ln)}</td><td class="tm">${esc(r.t.abbr)}</td><td class="num">${pStars(r.p)}</td>`}
+        ${LCOLS.map(c => { const v = c.v(r.o); return `<td class="num ${c.k === col.k ? 'sorted' : ''}">${v === null ? '–' : c.f(v)}</td>`; }).join('')}</tr>`).join('')}
+      </tbody></table>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:6px">${rows.length} ${byTeam ? 'teams, each the total of its current players' : 'players'}. Goals, assists, catches, interceptions and turnovers are per game.</div>`;
+}
+function gateText(){
+  const H = homeGate();
+  return `${Math.round(H.att * 100)}% full · ${H.crowd.toLocaleString()} fans<br>Tickets ${money(H.tickets)} + food ${money(H.food)} + parking ${money(H.parking)} = <b class="good">${money(H.total)}</b> a home game`;
+}
+/* ---- money outlook: an estimate of a home and an away game's net, and the move worth the most right now ----
+   Uses the same formulas as a real game (gate + TV - salaries). Suggestions are ranked by dollars per season. */
+const PER_FAN_SPEND = (t = G.ticket) => (t + fanSpend()) / 1e6;   // what one fan in the seats is worth
+function gateAt(fansPct, ticket = G.ticket, level = G.fac.arena){
+  const att = clamp(fansPct / 100 - (ticket - TICKET_FAIR) / 700, 0, 1), crowd = seats(level) * att;
+  return crowd * PER_FAN_SPEND(ticket);
+}
+function moneyOutlook(){
+  const f = Math.round(G.fans), star = rosterArr().reduce((s, p) => s + tvStarsFor(p), 0), payGame = payroll() / PAY_GAMES;
+  const home = gateAt(f) + f * TV_HOME_PER_FAN + star - payGame, away = f * TV_AWAY_PER_FAN + star * TV_AWAY_STARS - payGame;
+  const season = 7 * home + 7 * away, tips = [];
+  // win more: every win is +3% fans, which pays at every home game after it
+  const winWorth = gateAt(Math.min(100, f + FAN_WIN)) - gateAt(f) + FAN_WIN * TV_HOME_PER_FAN;
+  if (f < 100) tips.push({ v:winWorth * 7, t:`<b>Win games.</b> Each win is about +${FAN_WIN}% fans (more against better teams), worth about <span class="num">${money(winWorth)}</span> more every home game after it.` });
+  // a bigger arena, when the seats are what's holding the gate back
+  if (G.fac.arena < FAC_MAX) {
+    const more = gateAt(f, G.ticket, G.fac.arena + 1) - gateAt(f), cost = facCost('arena');
+    if (more > 0) tips.push({ v:more * 7 - cost / 2, t:`<b>Upgrade the arena</b> (<span class="num">${money(cost)}</span>): about <span class="num">+${money(more)}</span> a home game, paid back in ${Math.ceil(cost / more)} home games.` });
+  }
+  // better food and parking: pays at any crowd, most when the building is busy
+  if (G.fac.amenities < FAC_MAX) {
+    const crowd = seats(G.fac.arena) * clamp(f / 100 - (G.ticket - TICKET_FAIR) / 700, 0, 1), cost = facCost('amenities');
+    const more = crowd * (fanSpend(G.fac.amenities + 1) - fanSpend()) / 1e6;
+    if (more > 0) tips.push({ v:more * 7 - cost / 2, t:`<b>Upgrade Food + Parking</b> (<span class="num">${money(cost)}</span>): about <span class="num">+${money(more)}</span> a home game, paid back in ${Math.ceil(cost / more)} home games.` });
+  }
+  // the ticket price that earns the most at these fans
+  let best = G.ticket, bestV = gateAt(f);
+  for (let t = TICKET_MIN; t <= TICKET_MAX; t += 10) { const v = gateAt(f, t); if (v > bestV + 1e-9) { bestV = v; best = t; } }
+  if (best !== G.ticket && bestV - gateAt(f) > .02) tips.push({ v:(bestV - gateAt(f)) * 7, t:`<b>Set tickets to <span class="num">$${best}</span>.</b> At ${f}% fans that earns about <span class="num">+${money(bestV - gateAt(f))}</span> a home game.` });
+  // payroll: when you're losing money, the player costing the most per star
+  if (season < 0 && rosterArr().length) {
+    const worst = rosterArr().slice().sort((a, b) => b.sal / Math.max(1, pStars(b)) - a.sal / Math.max(1, pStars(a)))[0];
+    const save = worst.sal / PAY_GAMES - tvStarsFor(worst) * 1.25;
+    if (save > .05) tips.push({ v:save * 14, t:`<b>Payroll is the drain.</b> ${esc(worst.fn[0])}. ${esc(worst.ln)} (${pStars(worst)}★, <span class="num">${money(worst.sal)}</span>/yr) costs about <span class="num">${money(save)}</span> a game more than his star power brings in.` });
+  }
+  if (season > 1.5 && capNow() - payroll() >= 3) tips.push({ v:.01, t:`<b>You're making money.</b> With <span class="num">${money(capNow() - payroll())}</span> of cap room you can afford to add a star; they pay back in wins, fans and TV.` });
+  tips.sort((a, b) => b.v - a.v);
+  return { home, away, season, tips:tips.slice(0, 2) };
+}
+function outlookHTML(){
+  const O = moneyOutlook(), sgn = v => `<span class="num ${v < 0 ? 'bad' : 'good'}">${v < 0 ? '-' : '+'}${money(Math.abs(v))}</span>`;
+  return `<div class="panel outlook">
+    <div class="label" style="margin-bottom:4px">Money outlook <span class="muted" style="text-transform:none;letter-spacing:0">(per game, estimate)</span></div>
+    <div class="row between" style="font-size:13px"><span>Home ${sgn(O.home)}</span><span>Away ${sgn(O.away)}</span><span>Season ${sgn(O.season)}</span></div>
+  </div>`;
+}
+function officeHTML(){
+  const f = G.fin, cap = capNow();
+  return `${topBar('Front office', `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
+    <div class="hub">
+      <div class="stack">
+        <div class="panel">
+          <div class="row between"><span class="label">Cash</span><span class="px num ${G.cash < 0 ? 'debt' : 'good'}" style="font-size:18px">${money(G.cash)}</span></div>
+          <div class="muted num fo-detail" style="font-size:12px;margin-top:4px;font-weight:500">This season: tickets ${money(f.gate)} · food ${money(f.food || 0)} · parking ${money(f.parking || 0)} · TV ${money(f.tv)}${f.bonus ? ` · playoffs ${money(f.bonus)}` : ''} · salaries -${money(f.salaries || 0)} · signing bonuses -${money(f.bonuses || 0)} · upgrades -${money(f.spend)}</div>
+          <div class="muted fo-detail" style="font-size:12px;margin-top:4px">Each game your players are paid 1/17 of their salary (<span class="num">${money(payroll() / PAY_GAMES)}</span> a game right now). Cash also pays for upgrades and signing bonuses.</div>
+        </div>
+        <div class="panel">
+          <div class="row between"><span class="label">Ticket price</span><span class="px num" id="tp">$${G.ticket}</span></div>
+          <input type="range" id="ticket" min="${TICKET_MIN}" max="${TICKET_MAX}" step="10" value="${G.ticket}" style="width:100%;accent-color:#ffd23f" aria-label="Ticket price">
+          <div class="muted num" style="font-size:12px;font-weight:500" id="ti">${gateText()}</div>
+        </div>
+        <div class="panel row"><div class="grow"><div class="px" style="font-size:13px">Salary cap <span class="yellow num">${money(cap)}</span></div>
+          <div class="muted" style="font-size:12px">Your payroll can't go over it. Each upgrade adds <span class="num">${money(CAP_STEP)}</span>, up to <span class="num">${money(CAP_MAX)}</span>. Paid in credits (you have <span class="num">${G.credits}</span>).</div></div>
+          ${cap < CAP_MAX ? `<button class="btn sm go" data-a="capUp" ${G.credits < CAP_COST ? 'disabled' : ''}>${CAP_COST} CR</button>` : '<span class="px yellow">MAX</span>'}</div>
+      </div>
+      <div class="stack">${outlookHTML()}<div class="fac-list">${Object.entries(FAC).map(([k, F]) => { const lv = G.fac[k], c = facCost(k);
+        return `<div class="panel row"><div class="grow"><div class="px" style="font-size:13px">${F.name} <span class="yellow">LV${lv}</span></div><div class="fshort num">${F.short(lv)}</div><div class="muted" style="font-size:12px">${F.desc(lv)}</div></div>${lv < FAC_MAX ? `<button class="btn sm go" data-up="${k}" ${G.cash < c ? 'disabled' : ''}>${money(c)}</button>` : '<span class="px yellow">MAX</span>'}</div>`; }).join('')}</div></div>
+    </div>`;
+}
+// earnings minus costs for the game just played
+function postMoney(L){
+  const food = L.food || 0, parking = L.parking || 0;
+  const earn = L.gate + food + parking + L.tv, net = earn - L.salaries;
+  const line = (label, v, cls = '') => `<div class="row between"><span>${label}</span><span class="num ${cls}">${v}</span></div>`;
+  return `<div class="panel" style="font-size:14px">
+    <div class="label" style="margin-bottom:4px">Earnings</div>
+    ${L.gate ? `${line(`Tickets <span class="muted num">(${(L.crowd || 0).toLocaleString()} fans · ${Math.round(L.att * 100)}% full)</span>`, '+' + money(L.gate), 'good')}
+      ${line('Food', '+' + money(food), 'good')}${line('Parking', '+' + money(parking), 'good')}` : line('Tickets, food, parking <span class="muted">(away game)</span>', '$0', 'muted')}
+    ${L.tvFans != null
+      ? `${line(`${L.home ? 'Local' : 'National'} TV <span class="muted num">(${L.tvFanPct}% fans)</span>`, '+' + money(L.tvFans), 'good')}${line(`Star power${L.home ? '' : ' <span class="muted">(road ×1.5)</span>'}`, '+' + money(L.tvStars), 'good')}`
+      : line('TV money', '+' + money(L.tv), 'good')}
+    <div class="label" style="margin:8px 0 4px">Costs</div>
+    ${L.pay.map(x => line(`<span class="muted">${x.pos}</span> ${esc(x.name)}`, '-' + money(x.amt), 'bad')).join('')}
+    <div class="row between" style="border-top:2px solid rgba(255,255,255,.2);margin-top:6px;padding-top:4px"><b>Net</b><b class="num ${net >= 0 ? 'good' : 'bad'}">${net >= 0 ? '+' : '-'}${money(Math.abs(net))}</b></div>
+    ${line('Cash now', money(L.cash), L.cash < 0 ? 'debt' : '')}
+  </div>`;
+}
+function postHTML(){
+  const L = G.last; if (!L) return hubHTML();
+  const o = teamById(L.opp), t = userTeam();
+  if (L.kind === 'playoffs' && G.playoffs && G.playoffs.champ === 'U' && !L.celebrated) return champHTML(L, t, o);
+  return `${topBar((L.win ? '<span class="good">Win</span>' : '<span class="bad">Loss</span>') + (L.round ? ` · ${esc(L.round)}` : ''))}
+    <div class="post3">
+      <div class="panel"><div class="vs">
+        <div class="t">${badge(t)}<div class="px num" style="font-size:28px">${L.us}</div></div><div class="px muted">FINAL</div>
+        <div class="t">${badge(o)}<div class="px num" style="font-size:28px">${L.them}</div></div></div>
+        ${L.top.map(x => `<div class="row between" style="font-size:14px"><span>${x.pos} ${esc(x.name)}</span><span class="px num">${x.pts} ${x.pts === 1 ? 'GOAL' : 'GOALS'}</span></div>`).join('')}
+      </div>
+      ${L.pay ? postMoney(L) : '<div></div>'}
+      <div class="stack" style="align-content:start">
+        <div class="panel" style="font-size:14px">
+          <div class="label" style="margin-bottom:4px">Fans</div>
+          <div class="row between"><span>${L.win ? 'Win' : 'Loss'}${L.oppSt != null ? ` <span class="muted num">vs ${L.oppSt}★ (you ${L.ourSt}★)</span>` : ''}</span><span class="${L.fanResult >= 0 ? 'good' : 'bad'} num">${L.fanResult >= 0 ? '+' : ''}${L.fanResult}%</span></div>
+          ${L.newBoost ? `<div class="row between"><span>New signing${L.newBoost > 1 ? 's' : ''}</span><span class="good num">+${L.newBoost}%</span></div>` : ''}
+          <div class="row between" style="border-top:2px solid rgba(255,255,255,.2);margin-top:4px;padding-top:4px"><span>Fans now</span><span class="num">${Math.round(L.fansBefore)}% → <b>${Math.round(L.fans)}%</b></span></div>
+          <div class="row between"><span>Credits</span><span class="yellow num">+${L.cr}</span></div>
+        </div>
+        <button class="btn go" data-go="hub">Continue</button>
+      </div>
+    </div>`;
+}
+
+// we won the title: trophy, confetti in the team's colors, then on to the usual post-game screen
+function champHTML(L, t, o){
+  const cols = [t.c1, t.c2, '#ffd23f', '#ffffff'], titles = G.history.filter(h => h.finish === 'Champions').length;
+  const confetti = Array.from({ length:46 }, (_, i) => `<i class="cf" style="left:${(i * 37 % 100)}%;background:${cols[i % 4]};animation-duration:${(2.2 + (i * 13 % 20) / 10).toFixed(1)}s;animation-delay:-${(i * 7 % 30) / 10}s"></i>`).join('');
+  return `${topBar('Season ' + (G.history[0] ? G.history[0].season : G.season))}
+    <div class="panel champ">${confetti}
+      <div class="cup">🏆</div><h2>CHAMPIONS</h2>
+      <div class="px" style="font-size:15px">${esc(t.city)} ${esc(t.name)}</div>
+      <div class="num">Finals: ${esc(t.abbr)} ${L.us} · ${esc(o.abbr)} ${L.them}${titles > 1 ? ` · title number ${titles}` : ''}</div>
+      <div class="muted" style="font-size:12px">A banner goes up in your arena.</div>
+      <button class="btn go" data-a="champOk">Continue</button>
+    </div>`;
+}
+
+/* ---- sheets / toast ---- */
+let closeFn = null;
+function openSheet(html, mount){
+  closeSheet();
+  const bg = document.createElement('div'); bg.className = 'sheet-bg';
+  const sh = document.createElement('div'); sh.className = 'sheet'; sh.setAttribute('role', 'dialog');
+  sh.innerHTML = `<div class="inner">${html}</div>`;
+  document.body.append(bg, sh);
+  closeFn = () => { bg.remove(); sh.remove(); closeFn = null; };
+  bg.onclick = closeSheet; mount?.(sh);
+}
+function closeSheet(){ closeFn?.(); }
+let toastT;
+function toast(m){ document.querySelector('.toast')?.remove(); clearTimeout(toastT); const e = document.createElement('div'); e.className = 'toast'; e.textContent = m; document.body.append(e); toastT = setTimeout(() => e.remove(), 2600); }
+
+function compareSheet(p, verb, onYes, shown, extra = ''){
+  const cur = G.roster[p.pos];
+  const show = shown || p;
+  const rows = RATE.map(k => `<div class="row between" style="font-size:14px"><span>${RATE_NAME[k]}</span><span class="num">${cur ? `${cur[k]} → ` : ''}<b class="${cur && show[k] > cur[k] ? 'good' : cur && show[k] < cur[k] ? 'bad' : ''}">${show[k]}</b></span></div>`).join('');
+  openSheet(`<div class="row"><img src="${portrait(p, userTeam().c1)}" style="width:64px;height:64px;image-rendering:pixelated;border:3px solid #fff;border-radius:6px" class="${posColor(p.pos)}" alt="">
+      <div><div class="px">${p.pos} ${esc(p.fn)} ${esc(p.ln)}</div>${starsHTML(pStars(show))}<div class="muted" style="font-size:13px">Age ${p.age} · Max ${potStars(p)}★ · ${money(p.sal)} × ${p.yrs}yr</div></div></div>
+    ${rows}
+    ${extra}
+    ${cur ? `<div class="muted" style="font-size:13px">He replaces ${esc(cur.fn)} ${esc(cur.ln)}, who leaves the team.</div>` : ''}
+    <div class="row"><button class="btn go grow" id="yes">${verb}</button><button class="btn" id="no">Cancel</button></div>`, sh => {
+    sh.querySelector('#no').onclick = closeSheet;
+    sh.querySelector('#yes').onclick = () => { closeSheet(); onYes(); };
+  });
+}
+function replaceAt(p){
+  const cur = G.roster[p.pos];
+  if (cur) { cur.sal = askSalary(cur); cur.yrs = askYears(cur); if (cur.age < 34) G.fa.push(cur); }
+  p.gp = p.pts = 0; p.s = {};
+  G.roster[p.pos] = p; uniqueNum(p);
+}
+
+/* ---- events ---- */
+$('#ui').addEventListener('click', ev => {
+  const go = ev.target.closest('[data-go]'); if (go) { screen = go.dataset.go; render(); return; }
+  const kt = ev.target.closest('[data-kit]');
+  if (kt) { const [who, part, v] = kt.dataset.kit.split('|'); kitSel[who][part] = v; render(); return; }
+  const pl = ev.target.closest('[data-player]'); if (pl) { sel = pl.dataset.player; screen = 'player'; render(); return; }
+  const tr = ev.target.closest('[data-train]');
+  if (tr) { const p = G.roster[sel], k = tr.dataset.train, c = trainCost(p, k); if (G.credits >= c && p[k] < 10) { G.credits -= c; p[k]++; (p.tr ||= {})[k] = (p.tr[k] || 0) + 1; p.sal = Math.max(p.sal, 1); save(); render(); } return; }
+  const up = ev.target.closest('[data-up]');
+  if (up) { const k = up.dataset.up, c = facCost(k); if (G.fac[k] < FAC_MAX && G.cash >= c) { G.cash -= c; G.fin.spend += c; G.fac[k]++; if (k === 'recruiting') G.fa.forEach(p => { p.sal = askSalary(p); }); save(); render(); toast(`${FAC[k].name} is now level ${G.fac[k]}.`); } return; }
+  const fa = ev.target.closest('[data-fa]');
+  if (fa) {
+    const p = G.fa.find(x => x.id === fa.dataset.fa); if (!p) return;
+    const need = signBonus(p), cur = G.roster[p.pos];
+    if (G.cash < need) { toast(`His signing bonus is ${money(need)}. You have ${money(G.cash)}.`); return; }
+    if (payroll() - (cur ? cur.sal : 0) + askSalary(p) > capNow()) { toast('Not enough cap room.'); return; }
+    p.sal = askSalary(p); p.yrs = askYears(p);
+    compareSheet(p, `Sign him · <span class="num">${money(need)}</span>`, () => {
+      G.cash -= need; G.fin.bonuses = (G.fin.bonuses || 0) + need;
+      G.fa = G.fa.filter(x => x !== p); replaceAt(p); G.boosts.push(NEW_GAMES); save(); render();
+      toast(`Signed ${p.fn} ${p.ln} for a ${money(need)} bonus. +${FAN_NEW}% fans for his first ${NEW_GAMES} games.`);
+    }, null, `<div class="panel num" style="font-size:13px;padding:6px 10px"><div class="row between"><span>Signing bonus (now)</span><b>${money(need)}</b></div><div class="row between"><span>Salary</span><b>${money(p.sal)} × ${p.yrs}yr</b></div><div class="row between"><span>Cost per game</span><b>${money(p.sal / PAY_GAMES)}</b></div></div>`);
+    return;
+  }
+  const pr = ev.target.closest('[data-prospect]');
+  if (pr) {
+    const O = G.off, p = O.prospects.find(x => x.id === pr.dataset.prospect); if (!p) return;
+    if (O.picks <= 0) { toast('No picks left.'); return; }
+    compareSheet(p, 'Draft him', () => {
+      O.prospects = O.prospects.filter(x => x !== p); O.picks--; O.round = 3 - O.picks;
+      replaceAt(p); G.boosts.push(NEW_GAMES); aiDraft(); save(); render(); toast(`Drafted ${p.fn} ${p.ln}.`);
+    }, { ...p, ...p.scout });
+    return;
+  }
+  const a = ev.target.closest('[data-a]'); if (!a) return;
+  // save slots (these work before any game is loaded)
+  if (a.dataset.a === 'slotPlay') { openSlot(+a.dataset.n); return; }
+  if (a.dataset.a === 'toSlots') { save(); SLOT = null; G = null; screen = 'slots'; render(); return; }
+  if (a.dataset.a === 'slotReset') {
+    const n = +a.dataset.n, s = slotInfo(n);
+    openSheet(`<div class="px">Delete slot ${n}?</div><div class="muted">${s ? `${esc(s.team)}, season ${s.season}` : 'This save'} will be gone for good. The slot becomes empty and you can start a new game in it.</div>
+      <div class="row"><button class="btn red grow" id="yes">Delete save</button><button class="btn" id="no">Cancel</button></div>`, sh => {
+      sh.querySelector('#no').onclick = closeSheet;
+      sh.querySelector('#yes').onclick = () => { resetSlot(n); closeSheet(); render(); toast(`Slot ${n} deleted.`); };
+    });
+    return;
+  }
+  if (!G) return;
+  const act = a.dataset.a, O = G.off;
+  if (act === 'play') {
+    const ng = nextGameInfo();
+    kitSel = { us:{ ...(G.kit || { j:'home', s:'home' }) }, them:ng.home ? { j:'away', s:'away' } : { j:'home', s:'home' } };
+    if (!ng.home && kitSel.us.j === 'home') kitSel.us = { j:'away', s:'away' };
+    screen = 'kit'; render();
+  }
+  else if (act === 'tipoff') { G.kit = { ...kitSel.us }; save(); screen = 'hub'; startMatch(); }
+  else if (act === 'resume') { if (G.live && G.live.ks) kitSel = G.live.ks; screen = 'hub'; startMatch(); }
+  else if (act === 'sim') { if (!savedLive()) simMatch(); }         // a saved game has to be finished, not simmed over
+  else if (act === 'champOk') { G.last.celebrated = true; save(); render(); }
+  else if (act === 'simPlayoffs') { resolvePlayoffs(null); if (G.phase === 'playoffs') resolvePlayoffs(null); save(); render(); }
+  else if (act === 'settings') speedSheet();
+  else if (act === 'capUp') { if (G.credits >= CAP_COST && capNow() < CAP_MAX) { G.credits -= CAP_COST; G.cap = Math.min(CAP_MAX, capNow() + CAP_STEP); save(); render(); toast(`Salary cap is now ${money(G.cap)}.`); } }
+  else if (act === 'faPos') { faPos = a.dataset.p; render(); }
+  else if (act === 'lsort') { const k = a.dataset.k; if (lead.k === k) lead.asc = !lead.asc; else { lead.k = k; lead.asc = k === 'tov'; } render(); }
+  else if (act === 'offNext') { O.step = O.step === 'summary' ? 'resign' : O.step === 'resign' ? 'draft' : 'fa'; save(); render(); }
+  else if (act === 'resign') { const p = G.roster[a.dataset.pos]; const price = resignPrice(p), np = payroll() - p.sal + price; if (np > capNow()) { toast('Not enough cap room.'); return; } p.sal = price; p.yrs = askYears(p); save(); render(); }
+  else if (act === 'letgo') { const p = G.roster[a.dataset.pos]; G.roster[p.pos] = null; p.sal = askSalary(p); p.yrs = askYears(p); if (p.age < 34) G.fa.push(p); save(); render(); }
+  else if (act === 'draftDone') { O.step = 'fa'; screen = 'hub'; save(); render(); }
+  else if (act === 'newSeason') { startNewSeason(); render(); }
+  else if (act === 'release') {
+    const p = G.roster[sel], cost = p.sal * p.yrs * .5;
+    openSheet(`<div class="px">Release ${esc(p.fn)} ${esc(p.ln)}?</div><div class="muted">It costs ${money(cost)} cash. A walk-on takes his spot until you sign someone.</div><div class="row"><button class="btn red grow" id="yes">Release</button><button class="btn" id="no">Cancel</button></div>`, sh => {
+      sh.querySelector('#no').onclick = closeSheet;
+      sh.querySelector('#yes').onclick = () => {
+        if (G.cash < cost) { closeSheet(); toast(`You need ${money(cost)} cash to release him. You have ${money(G.cash)}.`); return; }
+        G.cash -= cost; G.fin.spend += cost;
+        const w = makePlayer(p.pos, rnd(2, 3), ri(22, 30)); w.sal = 1; w.yrs = 1;
+        p.sal = askSalary(p); p.yrs = askYears(p); G.fa.push(p); G.roster[p.pos] = w;
+        closeSheet(); screen = 'roster'; save(); render(); toast(`Released ${p.ln}. ${w.fn} ${w.ln} walks on.`);
+      };
+    });
+  }
+});
+$('#ui').addEventListener('input', ev => {
+  if (ev.target.id !== 'ticket') return;
+  G.ticket = +ev.target.value;
+  $('#tp').textContent = '$' + G.ticket;
+  $('#ti').innerHTML = gateText();
+});
+$('#ui').addEventListener('change', ev => {
+  if (ev.target.id === 'ticket') { save(); render(); }               // re-run the money outlook at the new price
+  if (ev.target.id === 'lPos') { lead.pos = ev.target.value; render(); }
+  if (ev.target.id === 'lTeam') { lead.team = ev.target.value; render(); }
+});
+function aiDraft(){
+  const O = G.off;
+  const n = Math.min(O.prospects.length, ri(3, 5));
+  for (let i = 0; i < n; i++) { const best = [...O.prospects].sort((a, b) => b.pot - a.pot)[ri(0, 1)] || O.prospects[0]; O.prospects = O.prospects.filter(x => x !== best); }
+  while (O.prospects.length < 10) { const pos = pick(POS); const p = makePlayer(pos, rnd(2.5, 5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1, 4)) * 2) / 2); p.sal = Math.max(1, Math.round(askSalary(p)) / 2); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); O.prospects.push(p); }
+}
+function speedSheet(inGame){
+  openSheet(`<div class="px">Game speed</div><div class="muted" style="font-size:13px">How fast the game clock runs. At 10x a 15:00 quarter takes 90 seconds; 5x is twice as long, 15x a third shorter.</div>
+    ${inGame ? `<div class="panel" style="font-size:13px;padding:6px 10px">This game: <b class="yellow num">${G.speed}x</b>. Speed is set before the game, and the whole league plays this week at it.</div>`
+      : `<div class="row">${[5, 10, 15].map(s => `<button class="btn grow ${G.speed === s ? 'go' : ''}" data-s="${s}">${s}x</button>`).join('')}</div>
+      <div class="muted" style="font-size:12px">Every team's games this week are played at the speed you pick, so slower weeks mean more points for everyone, not only you.</div>`}
+    ${inGame ? `<div class="row"><button class="btn go grow" id="res">Resume</button><button class="btn" id="simr">Sim rest</button></div>
+      <button class="btn" id="savex">Save &amp; exit</button>` : ''}`, sh => {
+    sh.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { G.speed = +b.dataset.s; save(); closeSheet(); if (!inGame) render(); else paused = false; });
+    if (inGame) { sh.querySelector('#res').onclick = () => { closeSheet(); paused = false; }; sh.querySelector('#simr').onclick = () => { closeSheet(); simRest(); };
+      sh.querySelector('#savex').onclick = () => { closeSheet(); saveAndExit(); }; }
+  });
+}
+
+/* ============================ matches ============================ */
+function endMatch(M, us, them, box, pbox){
+  delete G.live;                                                    // finished: no saved game to resume any more
+  applyResult(M, us, them, box, pbox);
+  if (M.kind === 'regular') { G.results[G.week] = { us, them }; finishWeek(); }
+  else resolvePlayoffs(us > them ? 'U' : M.opp.id);
+  save(); screen = 'post'; render();
+}
+function simMatch(){
+  const ng = nextGameInfo(); if (!ng) return;
+  const box = {}, pbox = {}, t = userTeam();
+  let us, them;
+  if (ng.home) [us, them] = simScore(t, ng.opp, .84, .86, box, pbox);
+  else [them, us] = simScore(ng.opp, t, .86, .84, null, null, box, pbox);
+  endMatch(ng, us, them, box, pbox);
+}
+
+/* ============================ uniforms ============================ */
+const KIT = ['home', 'away', 'alt'];
+const KIT_NAME = { home:'Home', away:'Away', alt:'Alt' };
+function uniColors(team, k){
+  const main = team.c1, sec = team.c2, W = '#ffffff';
+  const jersey = { home:{ J:main, T:W }, away:{ J:W, T:main }, alt:{ J:sec, T:main } }[k.j];
+  const shorts = { home:{ P:main, R:W }, away:{ P:W, R:main }, alt:{ P:sec, R:main } }[k.s];
+  return { J:jersey.J, j:shade(jersey.J, -.18), T:jersey.T, P:shorts.P, p:shade(shorts.P, -.18), R:shorts.R };
+}
+const MODEL = { id:'model', skin:TONES.tan, hair:'#1b1410', style:'fade' };
+function previewImg(team, k, num){
+  const spr = sprite(MODEL, uniColors(team, k), 'stand');
+  const c = document.createElement('canvas'); c.width = 32; c.height = (spr.height + 2) * 2;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.scale(2, 2); g.drawImage(spr, 1, 1); drawNumber(g, 1, 1 + spr.numRow, num, uniColors(team, k).T);
+  return c.toDataURL();
+}
+let kitSel = null;
+function kitHTML(){
+  const ng = nextGameInfo(), t = userTeam(), o = ng.opp;
+  const side = (who, team, k) => `<div class="panel kitp">
+      <div class="row between"><span class="px">${esc(team.city)} ${esc(team.name)}</span>${badge(team, 'sm')}</div>
+      <img class="kitimg" src="${previewImg(team, k, who === 'us' ? 23 : 7)}" alt="Uniform preview">
+      ${['j', 's'].map(part => `<div class="kitrow"><span class="label">${part === 'j' ? 'Jersey' : 'Shorts'}</span>
+        <div class="seg">${KIT.map(v => `<button class="btn sm ${k[part] === v ? 'go' : ''}" data-kit="${who}|${part}|${v}">${KIT_NAME[v]}</button>`).join('')}</div></div>`).join('')}
+    </div>`;
+  return `${topBar('Uniforms', `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
+    <div class="hub">${side('us', t, kitSel.us)}${side('them', o, kitSel.them)}</div>
+    <div class="row" style="margin-top:10px"><div class="muted grow" style="font-size:13px">${ng.home ? 'Home game' : `Away at ${esc(o.city)}`}. Pick both teams' looks, then tip off.</div><button class="btn go" data-a="tipoff">Tip off</button></div>`;
+}
+
+/* ============================ ENGINE ============================ */
+/* The field (user spec): 70 yards of playing field, 40 yards wide, a 20-yard end zone at each end. World units are
+   yards: x runs 0-110 along the field (goal lines at 20 and 90), y 0-40 across it, z is height. We attack to the
+   right (score in x >= 90), they attack to the left. Drawn tilted like the Retro Basket court. */
+let CW = 320;                                                         // view width in field pixels: set by fit() to the screen's shape
+const CH = 180, PXF = 6.6, PYF = 3.1, PZF = 11, X0 = 14, Y0 = 44;     // pixels per yard along the field, across it, and of height
+const FL = 110, FW = 40, EZ = 20, GOAL_L = EZ, GOAL_R = FL - EZ;
+const WORLD_W = Math.ceil(X0 * 2 + FL * PXF);
+const cv = $('#court'), ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
+const courtCv = document.createElement('canvas'); courtCv.width = WORLD_W; courtCv.height = CH;
+let cam = 0;
+const sx = x => X0 + x * PXF - cam, sy = (y, z = 0) => Y0 + y * PYF - z * PZF;
+const FONT = {
+  'A':['.#.','#.#','###','#.#','#.#'],
+  'B':['##.','#.#','##.','#.#','##.'],
+  'C':['.##','#..','#..','#..','.##'],
+  'D':['##.','#.#','#.#','#.#','##.'],
+  'E':['###','#..','##.','#..','###'],
+  'F':['###','#..','##.','#..','#..'],
+  'G':['.##','#..','#.#','#.#','.##'],
+  'H':['#.#','#.#','###','#.#','#.#'],
+  'I':['###','.#.','.#.','.#.','###'],
+  'J':['..#','..#','..#','#.#','.#.'],
+  'K':['#.#','#.#','##.','#.#','#.#'],
+  'L':['#..','#..','#..','#..','###'],
+  'M':['#.#','###','###','#.#','#.#'],
+  'N':['##.','#.#','#.#','#.#','#.#'],
+  'O':['.#.','#.#','#.#','#.#','.#.'],
+  'P':['##.','#.#','##.','#..','#..'],
+  'Q':['.#.','#.#','#.#','##.','.##'],
+  'R':['##.','#.#','##.','#.#','#.#'],
+  'S':['.##','#..','.#.','..#','##.'],
+  'T':['###','.#.','.#.','.#.','.#.'],
+  'U':['#.#','#.#','#.#','#.#','###'],
+  'V':['#.#','#.#','#.#','#.#','.#.'],
+  'W':['#.#','#.#','###','###','#.#'],
+  'X':['#.#','#.#','.#.','#.#','#.#'],
+  'Y':['#.#','#.#','.#.','.#.','.#.'],
+  'Z':['###','..#','.#.','#..','###'],
+  ' ':['...','...','...','...','...'],
+  '0':['###','#.#','#.#','#.#','###'],'1':['.#.','##.','.#.','.#.','###'],'2':['###','..#','###','#..','###'],'3':['###','..#','###','..#','###'],'4':['#.#','#.#','###','..#','..#'],
+  '5':['###','#..','###','..#','###'],'6':['###','#..','###','#.#','###'],'7':['###','..#','.#.','.#.','.#.'],'8':['###','#.#','###','#.#','###'],'9':['###','#.#','###','..#','###']
+};
+const pxText = (c, str, x, y, color) => { c.fillStyle = color; [...str].forEach((ch, i) => (FONT[ch] || FONT[' ']).forEach((r, yy) => [...r].forEach((p, xx) => { if (p === '#') c.fillRect(x + i * 4 + xx, y + yy, 1, 1); }))); };
+// t: home team, away: visitors, fill: share of seats taken, awayLeft: the visitors' bench is on the left half
+// round: the playoff round's name ('' in the regular season), titles: seasons the home team won it all (ours only)
+// left / right: the teams defending the left and right end zones (their colors and names go in them)
+function buildField(t, away, fill = .7, awayLeft = true, round = '', titles = [], left = t, right = away || t){
+  const c = courtCv.getContext('2d');
+  c.fillStyle = '#16204a'; c.fillRect(0, 0, WORLD_W, CH);
+  const mid = X0 + FL / 2 * PXF;
+  // shirts: 60% home main, 15% home secondary, 10% white, 15% visitors (20% on their bench's half, 10% on the home half)
+  const shirt = x => {
+    const awayHalf = (x < mid) === awayLeft, opp = awayHalf ? .2 : .1, r = Math.random();
+    if (r < opp) return away ? away.c1 : '#8c93a8';
+    const k = (r - opp) / (1 - opp);                                  // the rest keeps the 60 : 15 : 10 split
+    return k < 60 / 85 ? t.c1 : k < 75 / 85 ? t.c2 : '#f2f2f4';
+  };
+  for (let y = 2, row = 0; y < Y0 - 14; y += 7, row++) {
+    c.fillStyle = row % 2 ? '#1b2656' : '#19234f'; c.fillRect(0, y + 5, WORLD_W, 2);
+    for (let x = 1 + (row % 2) * 3; x < WORLD_W; x += 6) {
+      if (Math.random() >= fill) { c.fillStyle = '#26316a'; c.fillRect(x, y + 3, 5, 3); c.fillStyle = '#2d3a7a'; c.fillRect(x, y + 3, 5, 1); continue; }   // empty seat
+      const sh = shirt(x); c.fillStyle = sh; c.fillRect(x, y + 3, 5, 3); c.fillStyle = shade(sh, .3); c.fillRect(x, y + 3, 5, 1);   // lit shoulders so dark team colors still read
+      c.fillStyle = pick(SKIN); c.fillRect(x + 1, y, 3, 3);
+      if (Math.random() < .5) { c.fillStyle = pick(HAIR); c.fillRect(x + 1, y, 3, 1); }
+      if (round && sh !== (away && away.c1) && Math.random() < .3) { c.fillStyle = '#ffffff'; c.fillRect(x + 4, y - 1, 2, 2); }   // playoffs: home fans wave rally towels
+    }
+  }
+  // a banner in the rafters for every title we have won (home games)
+  titles.slice(0, 8).forEach((season, i) => {
+    const bx = Math.round(mid) + 70 + i * 14, n = String(season).slice(-2);
+    c.fillStyle = '#ffd23f'; c.fillRect(bx, 0, 11, 14); c.fillStyle = t.c1; c.fillRect(bx + 1, 0, 9, 13);
+    c.fillStyle = '#ffd23f'; c.fillRect(bx + 3, 1, 5, 3); c.fillRect(bx + 5, 4, 1, 1); c.fillRect(bx + 4, 5, 3, 1);   // a little trophy
+    pxText(c, n, bx + (n.length > 1 ? 2 : 4), 7, '#ffffff');
+  });
+  c.fillStyle = t.c1; c.fillRect(0, Y0 - 10, WORLD_W, 7);
+  if (round) {                                                       // playoffs: the sideline boards carry the round's name in gold
+    c.fillStyle = '#0b1433'; c.fillRect(0, Y0 - 10, WORLD_W, 7);
+    const word = round.toUpperCase().replace(/[^A-Z0-9 ]/g, ' '), step = word.length * 4 + 22;
+    for (let x = 8; x < WORLD_W; x += step) { pxText(c, word, x, Y0 - 9, '#ffd23f'); c.fillStyle = t.c1; c.fillRect(x + step - 15, Y0 - 8, 8, 3); }
+  } else { c.fillStyle = t.c2; for (let x = 6; x < WORLD_W; x += 40) c.fillRect(x, Y0 - 8, 20, 3); }
+  c.fillStyle = '#0b1433'; c.fillRect(0, Y0 - 3, WORLD_W, 3);
+  // grass: mown in 5-yard stripes, a darker apron outside the lines
+  const fx = x => Math.round(X0 + x * PXF), fy = y => Math.round(Y0 + y * PYF);
+  c.fillStyle = '#2f7d3a'; c.fillRect(0, Y0, WORLD_W, CH - Y0);
+  for (let x = 0; x < FL; x += 5) { c.fillStyle = (x / 5) % 2 ? '#3f9a49' : '#46a551'; c.fillRect(fx(x), fy(0), fx(x + 5) - fx(x), fy(FW) - fy(0)); }
+  for (let y = Y0 + 3; y < CH; y += 5) for (let x = (y % 3) * 7; x < WORLD_W; x += 17) { c.fillStyle = 'rgba(20,70,30,.22)'; c.fillRect(x, y, 2, 1); }   // flecks of texture
+  // end zones in the colors of the team defending them, with its name
+  const zone = (x0, team) => {
+    c.globalAlpha = .8; c.fillStyle = team.c1; c.fillRect(fx(x0), fy(0), fx(x0 + EZ) - fx(x0), fy(FW) - fy(0)); c.globalAlpha = 1;
+    const word = team.name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').slice(0, 12), k = word.length * 12 - 3 <= fx(x0 + EZ) - fx(x0) - 10 ? 3 : 2;
+    const w = (word.length * 4 - 1) * k, wx = Math.round((fx(x0) + fx(x0 + EZ)) / 2 - w / 2), wy = Math.round((fy(0) + fy(FW)) / 2 - 2.5 * k);
+    [...word].forEach((ch, i) => (FONT[ch] || FONT[' ']).forEach((r, y) => [...r].forEach((p, x) => {
+      if (p !== '#') return;
+      c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(wx + (i * 4 + x) * k + 1, wy + y * k + 1, k, k);
+      c.fillStyle = team.c2 === team.c1 ? '#ffffff' : team.c2; c.fillRect(wx + (i * 4 + x) * k, wy + y * k, k, k);
+    })));
+  };
+  zone(0, left); zone(GOAL_R, right);
+  // lines: the boundary, both goal lines, a hash every 10 yards and the two brick marks
+  c.fillStyle = '#ffffff';
+  c.fillRect(fx(0), fy(0), fx(FL) - fx(0), 1); c.fillRect(fx(0), fy(FW), fx(FL) - fx(0) + 1, 1);
+  for (const x of [0, GOAL_L, GOAL_R, FL]) c.fillRect(fx(x), fy(0), 1, fy(FW) - fy(0));
+  c.fillStyle = 'rgba(255,255,255,.55)';
+  for (let x = GOAL_L + 10; x < GOAL_R; x += 10) { c.fillRect(fx(x), fy(0), 1, 4); c.fillRect(fx(x), fy(FW) - 3, 1, 4); c.fillRect(fx(x), fy(FW / 2) - 1, 1, 3); }
+  for (const x of [GOAL_L + 20, GOAL_R - 20]) { c.fillRect(fx(x) - 2, fy(FW / 2), 5, 1); c.fillRect(fx(x), fy(FW / 2) - 2, 1, 5); }
+  // midfield: the home team's badge
+  const cxm = fx(FL / 2), cym = fy(FW / 2);
+  c.globalAlpha = .5; c.fillStyle = t.c1;
+  for (let py = -9; py <= 9; py++) for (let px = -22; px <= 22; px++) if ((px / 22) ** 2 + (py / 9) ** 2 <= 1) c.fillRect(cxm + px, cym + py, 1, 1);
+  c.globalAlpha = 1;
+  const ab = t.abbr.toUpperCase().replace(/[^A-Z0-9]/g, ''), aw = (ab.length * 4 - 1) * 2;
+  [...ab].forEach((ch, i) => (FONT[ch] || FONT[' ']).forEach((r, y) => [...r].forEach((p, x) => { if (p === '#') { c.fillStyle = '#ffffff'; c.fillRect(cxm - aw / 2 + (i * 4 + x) * 2, cym - 5 + y * 2, 2, 2); } })));
+}
+
+/* Retro Bowl-style sprites: flat colors, chunky shoulders and arms, no outlines.
+   Letters: H hair, S skin, s skin shade, E eye, T trim, J jersey, j jersey shade, P shorts, p shorts shade, W socks, K shoes. */
+const BODY = [
+  '.....HHHH.....',
+  '....HHHHHH....',
+  '....HSSSSS....',
+  '....SSSSES....',
+  '....SSSSSS....',
+  '.....sSSS.....',
+  '.....TSST.....',
+  '..TJJJJJJJJT..',
+  '.SSJJJJJJJJSS.',
+  '.SSJJJJJJJJSS.',
+  '.SsJJJJJJJJsS.',
+  '.SsjJJJJJJjsS.',
+  '.SsjJJJJJJjsS.',
+  '.SS.JJJJJJ.SS.',
+  '...PPPPPPPP...',
+  '...PPPPPPPP...',
+  '...PRPPPPRP...',
+  '...PRP..PRP...',
+];
+const SHOOT_TOP = [
+  '.....S..S.....',
+  '.....S..S.....',
+  '....SHHHHS....',
+  '....HHHHHH....',
+  '....HSSSSS....',
+  '....SSSSES....',
+  '....SSSSSS....',
+  '.....sSSS.....',
+  '.....TSST.....',
+  '...TJJJJJJT...',
+  '...JJJJJJJJ...',
+  '...JJJJJJJJ...',
+  '...jJJJJJJj...',
+  '...jJJJJJJj...',
+  '...jJJJJJJj...',
+];
+// Dunk poses: the same head and trunk as the shooting pose with no arms drawn; each pose adds its arms as [row, column, letter].
+const DUNK_TOP = [
+  '..............',
+  '..............',
+  '.....HHHH.....',
+  '....HHHHHH....',
+  '....HSSSSS....',
+  '....SSSSES....',
+  '....SSSSSS....',
+  '.....sSSS.....',
+  '.....TSST.....',
+  '...TJJJJJJT...',
+  '...JJJJJJJJ...',
+  '...JJJJJJJJ...',
+  '...jJJJJJJj...',
+  '...jJJJJJJj...',
+  '...jJJJJJJj...',
+];
+const ARM_UP = [[0, 10, 'S'], [0, 11, 'S'], [1, 10, 'S'], [1, 11, 'S'], [2, 10, 'S'], [2, 11, 'S'], ...[3, 4, 5, 6, 7, 8].flatMap(r => [[r, 10, 's'], [r, 11, 'S']]), [9, 11, 'S']];   // straight up, two pixels thick like his other arm, hand on top
+const ARM_BACK = [[9, 2, 'S'], [10, 1, 'S'], [10, 2, 'S'], [11, 1, 'S'], [11, 2, 's'], [12, 1, 'S'], [12, 2, 's'], [13, 1, 'S']];                                       // trailing arm, down and back
+const ARM_SLAM = [[9, 11, 'S'], [8, 11, 's'], [8, 12, 'S'], [7, 11, 's'], [7, 12, 'S'], [6, 12, 's'], [6, 13, 'S'], [5, 12, 's'], [5, 13, 'S'], [4, 12, 'S'], [4, 13, 'S'], [3, 12, 'S'], [3, 13, 'S']];   // reaching up and forward into the rim
+const ARM_FLAIL = [[9, 2, 'S'], [8, 2, 's'], [8, 1, 'S'], [7, 1, 'S'], [6, 1, 's'], [6, 0, 'S'], [5, 0, 'S']];                                                              // off arm thrown back for balance
+const POSES = {
+  shoot:{ top:SHOOT_TOP, legs:'stand' },
+  dunkUp:{ top:DUNK_TOP, legs:'dunkUp', arms:[...ARM_UP, ...ARM_BACK] },
+  dunkSlam:{ top:DUNK_TOP, legs:'dunkSlam', arms:[...ARM_SLAM, ...ARM_FLAIL] },
+  dunkHang:{ top:DUNK_TOP, legs:'dunkHang', arms:[...ARM_UP, ...ARM_BACK] },
+};
+// head and trunk rows for a frame: hair styled, then the pose's arms laid on top (hair rows are rewritten whole, so arms go on after)
+function poseRows(p, frame){
+  const pose = POSES[frame];
+  const h = styleHair(pose ? [...pose.top, ...BODY.slice(14)] : [...BODY], p, pose ? 2 : 0);
+  if (pose && pose.arms) {
+    const set = (r, c, ch) => { const a = [...h.rows[r]]; a[c] = ch; h.rows[r] = a.join(''); };
+    for (const [r, c, ch] of pose.arms) { set(r >= 2 ? r + h.added : r, c, ch); if (h.added && r === 2) set(2, c, ch); }   // tall hair adds a row: keep the arm unbroken
+  }
+  return { h, pose, legs:LEGS[pose ? pose.legs : frame] || LEGS.stand };
+}
+const NUM_ROW = { stand:8, shoot:10 };                                 // first jersey row that carries the number
+const DIGITS = {
+  0:['.##.','#..#','#..#','#..#','#..#','.##.'], 1:['.#..','##..','.#..','.#..','.#..','###.'], 2:['.##.','#..#','..#.','.#..','#...','####'],
+  3:['###.','...#','.##.','...#','...#','###.'], 4:['#..#','#..#','####','...#','...#','...#'], 5:['####','#...','###.','...#','...#','###.'],
+  6:['.##.','#...','###.','#..#','#..#','.##.'], 7:['####','...#','..#.','.#..','.#..','.#..'], 8:['.##.','#..#','.##.','#..#','#..#','.##.'],
+  9:['.##.','#..#','#..#','.###','...#','.##.'],
+};
+const LEGS = {
+  stand:['....SS..SS....','....SS..SS....','....ss..ss....','....WW..WW....','....WW..WW....','....KKK.KKK...'],
+  run0: ['.....SSSS.....','....SS..SS....','....SS...SS...','...ss....SS...','...WW.....WW..','..KK......KKK.'],
+  run1: ['.....SSSS.....','.....SSSSS....','......SS.SS...','......ss.WW...','......WW.KK...','.....KKK......'],
+  run2: ['.....SSSS.....','....SS..SS....','....SS...SS...','...ss....SS...','...WW.....WW..','..KK......KKK.'],
+  run3: ['.....SSSS.....','.....SSSSS....','......SS.SS...','......ss.WW...','......WW.KK...','.....KKK......'],
+  // dunks: a long stride off one foot going up, knees tucked at the rim, legs hanging while he's on it
+  dunkUp:  ['....SS..SSSS..','...SS.....SS..','..SS......WW..','..ss.....KKK..','.WW...........','KKK...........'],
+  dunkSlam:['....SS..SS....','....SSs.SSs...','...WWs.WWs....','..KKK.KKK.....','..............','..............'],
+  dunkHang:['....SS..SS....','....SS..SS....','....ss..ss....','....WW..WW....','....WW..WW....','....KK..KK....'],
+};
+function shade(hex, k){
+  const n = parseInt(hex.slice(1), 16);
+  const f = v => clamp(Math.round(v * (1 + k)), 0, 255);
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+// head rows from `top`: 0-1 crown, 2 brow, 3 eyes (E at x8, facing right), 4 mouth and jaw
+function styleHair(rows, p, top){
+  rows = [...rows];
+  let added = 0;
+  const style = p.style === 'headband' ? 'bald' : p.style, band = p.band || p.style === 'headband', face = p.face || '';
+  const put = (r, xs, ch) => { const a = [...rows[r]]; xs.forEach(x => { if (a[x] !== '.') a[x] = ch; }); rows[r] = a.join(''); };
+  if (style === 'bald') { rows[top] = '.....SSSS.....'; rows[top + 1] = '....SSSSSS....'; rows[top + 2] = '....sSSSSS....'; }
+  if (style === 'buzz') { rows[top] = '.....HHHH.....'; rows[top + 1] = '....sSSSSS....'; rows[top + 2] = '....SSSSSS....'; }
+  if (style === 'fade') { rows[top + 1] = '....sHHHHs....'; rows[top + 2] = '....sSSSSS....'; }
+  if (style === 'afro') { rows[top] = '...HHHHHHHH...'; rows[top + 1] = '...HHHHHHHH...'; rows[top + 2] = '...HHSSSSSH...'; rows.splice(top, 0, '....HHHHHH....'); added = 1; }
+  if (style === 'curly') { rows[top] = '....HHHHHH....'; rows[top + 2] = '....HSSSSH....'; rows.splice(top, 0, '....H.HH.H....'); added = 1; }
+  if (style === 'long') { rows[top + 1] = '...HHHHHHH....'; rows[top + 2] = '...HHHSSSS....'; rows[top + 3] = '...HSSSSES....'; rows[top + 4] = '...HSSSSSS....'; }
+  if (style === 'cornrows') { rows[top] = '.....HsHs.....'; rows[top + 1] = '....HHsHsH....'; rows[top + 2] = '....HSSSSS....'; }
+  if (style === 'hitop') { rows[top + 1] = '....HHHHHH....'; rows[top + 2] = '....sSSSSS....'; rows.splice(top, 0, '....HHHHHH....'); added = 1; }
+  if (band) put(top + 2 + added, [4, 5, 6, 7, 8, 9], 'W');
+  const eye = top + 3 + added, jaw = top + 4 + added;
+  if (face.includes('goggles')) put(eye, [6, 7, 8, 9], 'G');
+  if (face.includes('beard')) put(jaw, [6, 7, 8, 9], 'H');
+  else if (face.includes('goatee') || face.includes('stache')) put(jaw, [8, 9], 'H');
+  return { rows, added };
+}
+const spriteCache = {};
+function sprite(p, U, frame){
+  const key = [p.id, U.J, U.P, U.R, U.T, frame, p.style, p.skin, p.hair, p.band, p.face].join('|');
+  if (spriteCache[key]) return spriteCache[key];
+  const shoot = frame === 'shoot';
+  const h = styleHair(shoot ? [...SHOOT_TOP, ...BODY.slice(14)] : [...BODY], p, shoot ? 2 : 0);
+  const rows = h.rows.concat(LEGS[shoot ? 'stand' : frame] || LEGS.stand);
+  const pal = { H:p.hair, S:p.skin, s:shade(p.skin, -.16), E:'#1d1d27', T:U.T, J:U.J, j:U.j, P:U.P, p:U.p, R:U.R, W:'#f4f4f4', K:'#1d1d27', G:'#bfe3ff' };
+  const c = document.createElement('canvas'); c.width = 14; c.height = rows.length;
+  const g = c.getContext('2d');
+  rows.forEach((r, y) => [...(r || '')].forEach((ch, x) => { if (pal[ch]) { g.fillStyle = pal[ch]; g.fillRect(x, y, 1, 1); } }));
+  c.numRow = NUM_ROW[shoot ? 'shoot' : 'stand'] + h.added;
+  return spriteCache[key] = c;
+}
+// jersey number, drawn un-mirrored so it reads the same both ways
+/* ---- benches and coaches ---- */
+const SEAT_LEGS = ['...PPPPPPPP...','...PRPPPPRP...','....SS..SS....','....WW..WW....','...KKK..KKK...'];
+function seatedSprite(p, U){
+  const key = ['seat', p.id, U.J, U.P, U.R, U.T, p.style, p.skin, p.hair, p.band, p.face].join('|');
+  if (spriteCache[key]) return spriteCache[key];
+  const h = styleHair(BODY.slice(0, 14), p, 0);
+  const rows = h.rows.concat(SEAT_LEGS);
+  const pal = { H:p.hair, S:p.skin, s:shade(p.skin, -.16), E:'#1d1d27', T:U.T, J:U.J, j:U.j, P:U.P, p:U.p, R:U.R, W:'#f4f4f4', K:'#1d1d27', G:'#bfe3ff' };
+  const c = document.createElement('canvas'); c.width = 14; c.height = rows.length;
+  const g = c.getContext('2d');
+  rows.forEach((r, y) => [...r].forEach((ch, x) => { if (pal[ch]) { g.fillStyle = pal[ch]; g.fillRect(x, y, 1, 1); } }));
+  c.numRow = NUM_ROW.stand + h.added;
+  return spriteCache[key] = c;
+}
+// Coach: suit jacket, white shirt, tie in the team color. Older looks (gray or white hair, often bald on top) and sometimes glasses.
+const COACH = [
+  '.....HHHH.....',
+  '....HHHHHH....',
+  '....HSSSSS....',
+  '....SSSSES....',
+  '....SSSSSS....',
+  '.....sSSS.....',
+  '....CWTTWC....',
+  '...CCWTTWCC...',
+  '..CCCWTTWCCC..',
+  '..CCCCTTCCCC..',
+  '..CcCCTTCCcC..',
+  '..CcCCCCCCcC..',
+  '..CcCCCCCCcC..',
+  '..SS.CCCC.SS..',
+  '....DDDDDD....',
+  '....DDDDDD....',
+  '....DD..DD....',
+  '....DD..DD....',
+  '....DD..DD....',
+  '....DD..DD....',
+  '....DD..DD....',
+  '....KKK.KKK...',
+];
+function makeCoach(){
+  const tone = pick(['black', 'tan', 'white', 'white']);
+  return { id:'coach' + uid(), skin:TONES[tone], hair:pick(['#b8b8b8', '#d9d9d9', '#8c8c8c', tone === 'white' ? '#5c3a1e' : '#1b1410']), bald:Math.random() < .4, glasses:Math.random() < .5, suit:pick(['#23283a', '#2e3240', '#1b1f2e', '#4a4f5c', '#3a2f28']) };
+}
+function coachSprite(co, tie){
+  const key = ['coach', co.id, tie].join('|');
+  if (spriteCache[key]) return spriteCache[key];
+  const rows = [...COACH];
+  if (co.bald) { rows[0] = '..............'; rows[1] = '....SSSSSS....'; rows[2] = '....HSSSSH....'; }
+  if (co.glasses) rows[3] = '....GGSGGS....';
+  const pal = { H:co.hair, S:co.skin, s:shade(co.skin, -.16), E:'#1d1d27', G:'#1d1d27', C:co.suit, c:shade(co.suit, -.25), D:shade(co.suit, -.1), W:'#f4f4f4', T:tie, K:'#111111' };
+  const c = document.createElement('canvas'); c.width = 14; c.height = rows.length;
+  const g = c.getContext('2d');
+  rows.forEach((r, y) => [...r].forEach((ch, x) => { if (pal[ch]) { g.fillStyle = pal[ch]; g.fillRect(x, y, 1, 1); } }));
+  return spriteCache[key] = c;
+}
+/* ---- HD players ----
+   The same chunky shapes and poses as the letter sprites above, redrawn at twice the pixel density
+   (each letter pixel becomes 2 x 2) with a polish pass: light from the front, shade on the back,
+   real eyes, nose and mouth, hair shine, sock stripes, shoe soles, hems, and in-color edges. */
+// 8-frame run: each leg swings from the hip (thigh up to ±34°) and folds at the knee while it swings
+// forward; the far leg is a shade darker so the two never blur together. y0 = hip line in HD pixels.
+const RUN_FRAMES = 8;
+function runLegs(g, f, y0, skin, U){
+  const seg = (a, b, w, col) => {
+    const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), 1) * 2;
+    g.fillStyle = col;
+    for (let i = 0; i <= n; i++) { const x = a[0] + (b[0] - a[0]) * i / n, y = a[1] + (b[1] - a[1]) * i / n; g.fillRect(Math.round(x - w / 2), Math.round(y - w / 2), w, w); }
+  };
+  const L1 = 6.5, L2 = 6, ground = y0 + 9.5, accent = U.J === '#ffffff' ? U.T : U.J;
+  const leg = (phi, hipX, far) => {
+    const a = .6 * Math.sin(phi), k = .15 + 1.25 * Math.max(0, Math.cos(phi));          // thigh angle, knee fold (radians)
+    const hip = [hipX, y0 - 2], knee = [hip[0] + L1 * Math.sin(a), hip[1] + L1 * Math.cos(a)];
+    let ankle = [knee[0] + L2 * Math.sin(a - k), knee[1] + L2 * Math.cos(a - k)];
+    if (ankle[1] > ground) ankle = [ankle[0], ground];                                    // feet never sink into the floor
+    const sk = far ? shade(skin, -.2) : skin, sock = far ? '#c9ccd6' : '#f2f2f4';
+    seg(hip, knee, 4, sk); seg(knee, ankle, 3, sk);
+    const s = [lerp(knee[0], ankle[0], .6), lerp(knee[1], ankle[1], .6)];
+    seg(s, ankle, 3, sock);
+    g.fillStyle = far ? shade(accent, -.25) : accent; g.fillRect(Math.round(s[0] - 1.5), Math.round(s[1] - .5), 3, 1);   // thin stripe at the top of the sock
+    const ax = Math.round(ankle[0]), ay = Math.round(ankle[1]);
+    g.fillStyle = far ? '#14141c' : '#1d1d27'; g.fillRect(ax - 2, ay + 1, 6, 2);                         // shoe, toe forward
+    g.fillStyle = far ? '#b8b8c0' : '#e6e6ea'; g.fillRect(ax - 2, ay + 2, 6, 1);                         // sole
+    g.fillStyle = far ? shade(accent, -.25) : accent; g.fillRect(ax + 1, ay + 1, 2, 1);
+  };
+  const phi = f / RUN_FRAMES * Math.PI * 2;
+  leg(phi + Math.PI, 12, true);                                       // far leg first
+  leg(phi, 15, false);
+}
+const hdCache = {};
+function hdSprite(p, U, frame){
+  const key = ['hd', p.id, U.J, U.P, U.R, U.T, frame, p.style, p.skin, p.hair, p.band, p.face].join('|');
+  if (hdCache[key]) return hdCache[key];
+  const { h, pose, legs } = poseRows(p, frame), shoot = !!pose;
+  const rows = h.rows.concat(legs);
+  const hair = p.hair && p.hair.startsWith('#') ? p.hair : '#1b1410';
+  const pal = { H:hair, S:p.skin, s:shade(p.skin, -.16), E:'#1d1d27', T:U.T, J:U.J, j:U.j, P:U.P, p:U.p, R:U.R, W:'#f4f4f4', K:'#1d1d27', G:'#bfe3ff' };
+  const W = 14, Hh = rows.length;
+  const c = document.createElement('canvas'); c.width = W * 2; c.height = Hh * 2;
+  const g = c.getContext('2d');
+  const at = (x, y) => (rows[y] || '')[x] || '.';
+  const px = (x, y, col) => { g.fillStyle = col; g.fillRect(x, y, 1, 1); };
+  const legTop = Hh - 6;                                              // the last 6 rows are legs
+  const run = /^run(\d)$/.exec(frame);
+  if (run) runLegs(g, +run[1], legTop * 2, p.skin, U);                 // drawn first so the shorts cover the hips
+  let eyeSeen = false;
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+    if (run && y >= legTop) break;
+    const ch = at(x, y), col = pal[ch]; if (!col) continue;
+    const X = x * 2, Y = y * 2;
+    g.fillStyle = col; g.fillRect(X, Y, 2, 2);
+    const back = at(x - 1, y) === '.', front = at(x + 1, y) === '.', up = at(x, y - 1), down = at(x, y + 1);
+    if (ch === 'E') { px(X, Y, '#f4f4f4'); px(X, Y + 1, '#f4f4f4'); px(X + 1, Y, '#1d1d27'); px(X + 1, Y + 1, '#1d1d27'); eyeSeen = { X, Y }; continue; }
+    if (ch === 'H') {
+      if (up === '.' ) px(X + 1, Y, shade(hair, .45));                                      // shine on top
+      if (back) { px(X, Y, shade(hair, -.25)); px(X, Y + 1, shade(hair, -.25)); }
+    }
+    if (ch === 'S' || ch === 's') {
+      if (back) { px(X, Y, shade(p.skin, -.2)); px(X, Y + 1, shade(p.skin, -.2)); }
+      if (front && y < legTop) { px(X + 1, Y, shade(p.skin, .1)); }
+      if ('HW'.includes(up) && y < 8) px(X + 1, Y, shade(p.skin, .14));                     // forehead light
+    }
+    if (ch === 'J' || ch === 'j') {
+      if (back || !'Jj'.includes(at(x - 1, y))) { px(X, Y, shade(col, -.18)); px(X, Y + 1, shade(col, -.18)); }
+      if (front || !'Jj'.includes(at(x + 1, y))) { px(X + 1, Y, shade(col, .12)); px(X + 1, Y + 1, shade(col, .12)); }
+      if (!'JjT'.includes(down)) { px(X, Y + 1, shade(col, -.22)); px(X + 1, Y + 1, shade(col, -.22)); }   // hem
+    }
+    if (ch === 'P' || ch === 'p') {
+      if (!'PpR'.includes(down)) { px(X, Y + 1, shade(col, -.25)); px(X + 1, Y + 1, shade(col, -.25)); }
+      if (back) { px(X, Y, shade(col, -.18)); px(X, Y + 1, shade(col, -.18)); }
+      if (!'PpR'.includes(up)) { px(X, Y, shade(col, -.3)); px(X + 1, Y, shade(col, -.3)); }             // waistband
+    }
+    if (ch === 'W' && y >= legTop) { if ('Ss'.includes(up)) { px(X, Y, U.J === '#ffffff' ? U.T : U.J); px(X + 1, Y, U.J === '#ffffff' ? U.T : U.J); } }
+    if (ch === 'K') { px(X, Y + 1, '#e6e6ea'); px(X + 1, Y + 1, '#e6e6ea'); if (front) px(X + 1, Y, U.J === '#ffffff' ? U.T : U.J); }
+    if (ch === 'T' && y < legTop) { px(X, Y + 1, shade(col, -.12)); }
+  }
+  // face details around the eye: brow, nose, mouth, ear
+  if (eyeSeen) {
+    const { X, Y } = eyeSeen, face = p.face || '';
+    if (!face.includes('goggles')) { g.fillStyle = face.includes('unibrow') ? hair : shade(hair, .1); g.fillRect(X - (face.includes('unibrow') ? 3 : 0), Y - 1, face.includes('unibrow') ? 5 : 3, 1); }
+    if (at(eyeSeen.X / 2 + 2, eyeSeen.Y / 2) === '.') px(X + 4, Y + 1, p.skin);                  // nose tip past the face
+    px(X + 1, Y + 3, face.includes('beard') || face.includes('stache') ? hair : '#8a3b2e'); px(X + 2, Y + 3, face.includes('beard') || face.includes('stache') ? hair : '#8a3b2e');
+    px(X - 5, Y, shade(p.skin, -.3)); px(X - 5, Y + 1, shade(p.skin, -.3)); px(X - 4, Y + 1, shade(p.skin, -.22));   // ear
+  }
+  // in-color edges: darken every pixel that touches transparency
+  const d = g.getImageData(0, 0, c.width, c.height), a = d.data, out = new Uint8ClampedArray(a);
+  const op = (x, y) => x >= 0 && y >= 0 && x < c.width && y < c.height && a[(y * c.width + x) * 4 + 3] > 0;
+  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+    const i = (y * c.width + x) * 4; if (!a[i + 3]) continue;
+    if (!op(x - 1, y) || !op(x + 1, y) || !op(x, y - 1) || !op(x, y + 1)) { out[i] = a[i] * .62; out[i + 1] = a[i + 1] * .62; out[i + 2] = a[i + 2] * .68; }
+  }
+  a.set(out); g.putImageData(d, 0, 0);
+  c.numRow = NUM_ROW[shoot ? 'shoot' : 'stand'] + h.added;
+  c.rowsH = Hh;
+  return hdCache[key] = c;
+}
+// draw a player at court size (14 px wide) from his HD sprite; returns the top y
+function drawHD(g, p, U, frame, X, feetY, face, ghost){
+  const spr = hdSprite(p, U, frame), h = spr.rowsH, top = feetY - h;
+  if ((face || 1) < 0) { g.save(); g.translate(X, 0); g.scale(-1, 1); g.drawImage(spr, -7, top, 14, h); g.restore(); }
+  else g.drawImage(spr, X - 7, top, 14, h);
+  if (!ghost) drawNumber(g, X - 7, top + spr.numRow, p.num, U.T);
+  return top;
+}
+const BENCH_GAP = 2.4;                                               // yards between seats
+function drawBench(side){
+  const B = M.bench[side], U = M.uni[side], seatY = Math.round(sy(-1.15));
+  const x0 = Math.round(sx(B.x0)) - 5, x1 = Math.round(sx(B.x0 + BENCH_GAP * 3)) + 6;
+  ctx.fillStyle = '#3c4466'; ctx.fillRect(x0, seatY - 8, x1 - x0, 4);                       // bench back
+  ctx.fillStyle = '#59628c'; ctx.fillRect(x0, seatY - 4, x1 - x0, 2);                       // seat
+  ctx.fillStyle = '#232a45'; ctx.fillRect(x0 + 1, seatY - 2, 2, 3); ctx.fillRect(x1 - 3, seatY - 2, 2, 3);
+  B.players.forEach((p, i) => {
+    const X = Math.round(sx(B.x0 + i * BENCH_GAP)), spr = seatedSprite(p, U), top = seatY - spr.height + 1;
+    ctx.drawImage(spr, X - 7, top);
+    drawNumber(ctx, X - 7, top + spr.numRow, p.num, U.T);
+  });
+  const co = M.coaches[side], X = Math.round(sx(co.x)), Y = Math.round(sy(-0.5)), spr = coachSprite(co.look, co.tie);
+  ctx.fillStyle = 'rgba(10,50,20,.34)'; ctx.fillRect(X - 5, Y - 1, 11, 2);
+  if (co.face < 0) { ctx.save(); ctx.translate(X, 0); ctx.scale(-1, 1); ctx.drawImage(spr, -7, Y - spr.height); ctx.restore(); }
+  else ctx.drawImage(spr, X - 7, Y - spr.height);
+}
+function drawNumber(g, left, top, num, color){
+  // drawn in half-pixels so a two-digit number fits inside the jersey; centered on the chest (sprite column 7)
+  const ds = String(num).split(''), w = ds.length * 4 + (ds.length - 1);
+  const x0 = Math.round((left + 7 - w / 4) * 2) / 2, y0 = Math.round((top + 1) * 2) / 2;   // half-pixel grid: quarter pixels blur
+  g.fillStyle = color;
+  ds.forEach((d, i) => DIGITS[d].forEach((r, y) => [...r].forEach((ch, x) => { if (ch === '#') g.fillRect(x0 + (i * 5 + x) / 2, y0 + y / 2, .5, .5); })));
+}
+function drawPlayer(e, U, marker){
+  const X = Math.round(sx(e.x)), Yg = Math.round(sy(e.y)), Y = Math.round(sy(e.y, e.z || 0));
+  const frame = (e.poseT || 0) > 0 ? 'shoot' : e.moving ? 'run' + (((Math.floor(e.anim) % RUN_FRAMES) + RUN_FRAMES) % RUN_FRAMES) : 'stand';
+  // soft oval shadow, smaller when he's in the air
+  const air = clamp(1 - (e.z || 0) / 3, .5, 1);
+  ctx.fillStyle = 'rgba(10,50,20,.34)'; ctx.fillRect(X - 6 * air, Yg - 1, 12 * air + 1, 2); ctx.fillRect(X - 4 * air, Yg - 2, 8 * air + 1, 1); ctx.fillRect(X - 4 * air, Yg + 1, 8 * air + 1, 1);
+  let top;
+  if ((e.dive || 0) > 0) {                                            // a layout: stretched out flat, arms first
+    const spr = hdSprite(e.p, U, 'shoot'), h = spr.rowsH, f = e.face || 1;
+    ctx.save(); ctx.translate(X, Yg - 5); ctx.rotate(f * Math.PI / 2 * .88); ctx.drawImage(spr, -7, -h / 2, 14, h); ctx.restore();
+    top = Yg - 14;
+  } else top = drawHD(ctx, e.p, U, frame, X, Y, e.face || 1);
+  if (marker) {
+    const my = top - 6;                                               // just above the hair
+    ctx.fillStyle = marker; ctx.fillRect(X - 3, my, 7, 2); ctx.fillRect(X - 2, my + 2, 5, 1); ctx.fillRect(X - 1, my + 3, 3, 1); ctx.fillRect(X, my + 4, 1, 1);
+  }
+}
+// the disc: a flat white ellipse seen from the side, its shadow on the grass under it
+const DISC = ['..kkkk..', '.kWWWWk.', 'kWWWWWWk', 'kwwWWwwk', '.kddddk.', '..kkkk..'];
+const DISC_PAL = { W:'#ffffff', w:'#e3e8f2', d:'#b3bccd', k:'#1b2440' };
+const discSpr = (() => { const c = document.createElement('canvas'); c.width = 8; c.height = 6; const g = c.getContext('2d'); DISC.forEach((r, y) => [...r].forEach((ch, x) => { if (DISC_PAL[ch]) { g.fillStyle = DISC_PAL[ch]; g.fillRect(x, y, 1, 1); } })); return c; })();
+function drawDisc(){
+  const d = M.disc, X = Math.round(sx(d.x)), Yg = Math.round(sy(d.y)), Y = Math.round(sy(d.y, d.z));
+  const k = clamp(1 - d.z / 7, .4, 1);
+  ctx.fillStyle = 'rgba(8,40,16,.42)'; ctx.fillRect(Math.round(X - 4 * k), Yg, Math.round(8 * k) + 1, 2);
+  ctx.drawImage(discSpr, X - 4, Y - 3);
+}
+
+/* ---- match state ---- */
+let M = null, raf = 0, lastT = 0, paused = false;
+// The view is always 180 px tall; its width follows the screen's shape (16:9 is 320, an iPhone 14 sideways
+// is about 390), so wide phones see more field instead of black bars. The camera scrolls along the field.
+function fit(){
+  const gs = getComputedStyle($('#game')), aw = innerWidth - parseFloat(gs.paddingLeft) - parseFloat(gs.paddingRight);   // same width as the menus
+  const ah = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-h')) || innerHeight;   // the phone app measures the real screen (see the site wrapper)
+  CW = clamp(Math.round(CH * aw / ah), 320, Math.min(420, WORLD_W));
+  if (cv.width !== CW * 2) { cv.width = CW * 2; cv.height = CH * 2; }
+  const s = Math.min(aw / CW, ah / CH);
+  cv.style.width = Math.floor(CW * s) + 'px'; cv.style.height = Math.floor(CH * s) + 'px';
+}
+addEventListener('resize', () => { if (M) fit(); });
+// iPhones can report the screen size late (right after launch or a rotation): measure again a moment later
+addEventListener('orientationchange', () => { setTimeout(() => { if (M) fit(); }, 250); setTimeout(() => { if (M) fit(); }, 700); });
+if (window.visualViewport) visualViewport.addEventListener('resize', () => { if (M) fit(); });
+
+const QUARTER = 900, OT_LEN = 300;                                    // game seconds in a quarter and in overtime
+function startMatch(){
+  const ng = nextGameInfo(); if (!ng) return;
+  const t = userTeam();
+  const blank = () => ({ cmp:0, att:0, to:0, d:0, poss:0 });
+  const ks = kitSel || { us:G.kit || { j:'home', s:'home' }, them:{ j:'away', s:'away' } };
+  const ent = (p, face) => ({ p, x:55, y:20, z:0, tx:55, ty:20, vx:0, vy:0, anim:0, moving:false, face, run:0, lagT:0, lx:55, ly:20, cutWait:0, inCut:false, tried:false, dPrev:1e9 });
+  M = { ...ng, t, uni:{ us:uniColors(t, ks.us), them:uniColors(ng.opp, ks.them) }, id:uid(), us:0, them:0, box:{}, pbox:{}, st:{ us:blank(), them:blank() }, q:1, clock:QUARTER, phase:'idle', flash:0, shake:0, pop:0,
+    our:POS.map(pos => ent(G.roster[pos], 1)), th:ng.opp.players.map(p => ent(p, -1)),
+    disc:{ x:55, y:20, z:0, holder:null, fl:null }, off:'us', stall:0, ctrl:3, aim:null, think:1, startQ:Math.random() < .5 ? 'us' : 'them', chase:null };
+  // the stands fill to this game's attendance: yours from fans and ticket price, theirs from their record
+  const oppGp = ng.opp.w + ng.opp.l, oppFill = clamp(.55 + (oppGp ? ng.opp.w / oppGp : .5) * .4, .4, .98);
+  const po = ng.kind === 'playoffs';                                // playoff atmosphere: the look only, the gate still follows the fans
+  M.fill = po ? 1 : ng.home ? attendance() : oppFill;
+  $('#rdn').textContent = po ? ROUND_SHORT[ng.label] || ng.label : ''; $('#rdn').hidden = !po;
+  // we defend the left end zone and attack the right one
+  buildField(ng.home ? t : ng.opp, ng.home ? ng.opp : t, M.fill, ng.home, po ? ng.label : '', ng.home ? G.history.filter(h => h.finish === 'Champions').map(h => h.season).reverse() : [], t, ng.opp);
+  G.coach ||= makeCoach();
+  const benchGuys = () => Array.from({ length:4 }, () => giveLook({ id:uid(), num:ri(0, 55) }));
+  // our bench sits on the half we attack, theirs on the other
+  M.bench = { us:{ x0:62, players:benchGuys() }, them:{ x0:38, players:benchGuys() } };
+  M.coaches = { us:{ look:G.coach, x:74, face:-1, tie:t.c1 }, them:{ look:makeCoach(), x:33, face:1, tie:ng.opp.c1 } };
+  $('#tmU').style.background = t.c1; $('#aU').textContent = t.abbr; $('#aU').style.color = t.c2;
+  $('#tmO').style.background = ng.opp.c1; $('#aO').textContent = ng.opp.abbr; $('#aO').style.color = ng.opp.c2;
+  $('#ui').hidden = true; $('#game').hidden = false; paused = false;
+  fit(); hud(); setTimeout(() => { if (M) fit(); }, 300);
+  const L = savedLive();
+  if (L) {                                                          // resuming a saved game: the team that had the disc receives a pull
+    Object.assign(M, { q:L.q, clock:L.clock, us:L.us, them:L.them, box:L.box || {}, pbox:L.pbox || {}, st:L.st || M.st, startQ:L.startQ || 'us' });
+    hud(); startPull(L.poss === 'them' ? 'them' : 'us');
+    banner('RESUMED', `${qText(L.q)} · ${clockText(L.clock)}`, 1300);
+  } else {
+    startPull(quarterStarter(1));
+    banner(po ? ng.label.toUpperCase() : 'GAME ON', M.off === 'us' ? `${t.name} receive` : `${ng.opp.name} receive`, po ? 1800 : 1200);
+  }
+  lastT = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(loop);
+}
+/* ---- save & exit a game in progress ----
+   G.live keeps the quarter, clock, score, box scores and who had the disc. The game isn't recorded until it's
+   finished; resuming starts with a pull to that team and the clock runs on from there. */
+// whoever receives to start the 1st also receives to start the 4th; the other team receives the 2nd and 3rd. Overtime is a flip.
+function quarterStarter(q){
+  const first = M.startQ || 'us', other = first === 'us' ? 'them' : 'us';
+  if (q === 1 || q === 4) return first;
+  if (q === 2 || q === 3) return other;
+  return Math.random() < .5 ? 'us' : 'them';
+}
+function saveAndExit(){
+  if (!M || M.phase === 'done') return;
+  let q = M.q, clock = M.clock, poss = M.off;
+  if (clock <= 0) { q++; clock = q > 4 ? OT_LEN : QUARTER; poss = quarterStarter(q); }   // saved at a quarter break: resume at the next one
+  G.live = { opp:M.opp.id, kind:M.kind, week:G.week, season:G.season, q, clock, us:M.us, them:M.them, poss, startQ:M.startQ, box:M.box, pbox:M.pbox, st:M.st, ks:kitSel };
+  M = null; cancelAnimationFrame(raf); paused = false;
+  $('#game').hidden = true; $('#ui').hidden = false;
+  save(); screen = 'hub'; render();
+  toast('Game saved. Tap Resume to pick it up.');
+}
+// is there a saved game, and is it still the next game on the schedule?
+function savedLive(){
+  const L = G.live, ng = nextGameInfo();
+  if (!L) return null;
+  if (!ng || ng.opp.id !== L.opp || ng.kind !== L.kind || L.season !== G.season || (L.kind === 'regular' && L.week !== G.week)) { delete G.live; return null; }
+  return L;
+}
+const clockText = c => `${Math.floor(Math.max(0, c) / 60)}:${String(Math.floor(Math.max(0, c) % 60)).padStart(2, '0')}`;
+const qText = q => q > 4 ? 'OT' : ['1st', '2nd', '3rd', '4th'][q - 1];
+function hud(){
+  $('#sU').textContent = M.us; $('#sO').textContent = M.them;
+  $('#qq').textContent = M.q > 4 ? 'OT' : ['1ST', '2ND', '3RD', '4TH'][M.q - 1];
+  $('#qc').textContent = clockText(M.clock);
+  const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
+  $('#pU').className = 'poss' + (play && M.off === 'us' ? ' on' : ''); $('#pO').className = 'poss' + (play && M.off === 'them' ? ' on' : '');
+  $('#shc').textContent = M.phase === 'live' ? Math.min(STALL, Math.floor(M.stall) + 1) : '';
+  const defending = play && M.off === 'them' && !M.auto;
+  if (defending !== M.joyShown) { M.joyShown = defending; $('#joy').hidden = !defending; if (!defending) joyReset(); }
+  const hint = !play || M.auto ? '' : M.off === 'us' ? 'Drag back anywhere and let go to throw' : 'Stick: run your defender · tap a teammate to switch';
+  if (hint !== M.hint) { M.hint = hint; tip(hint); }
+}
+function banner(text, small, ms = 1000, bigSub = false){
+  const b = $('#banner'); b.innerHTML = esc(text) + (small ? `<small${bigSub ? ' class="big"' : ''}>${esc(small)}</small>` : ''); b.hidden = false;
+  clearTimeout(banner.t); banner.t = setTimeout(() => b.hidden = true, ms);
+}
+const tip = t => { $('#tip').textContent = t || ''; };
+
+/* ---- sides ---- */
+const teamOf = side => side === 'us' ? M.our : M.th;
+const otherSide = side => side === 'us' ? 'them' : 'us';
+const dirOf = side => side === 'us' ? 1 : -1;                         // which way that team attacks
+function holderEnt(){ const h = M.disc.holder; return h ? teamOf(h.side)[h.i] : null; }
+function nearestIdx(arr, pt, skip = -1){ let b = -1, bd = 1e9; arr.forEach((e, i) => { if (i === skip) return; const d = dist(e, pt); if (d < bd) { bd = d; b = i; } }); return b; }
+const inField = p => p.x >= 0 && p.x <= FL && p.y >= 0 && p.y <= FW;
+const inGoal = (p, side) => inField(p) && (side === 'us' ? p.x >= GOAL_R : p.x <= GOAL_L);
+
+/* ---- movement (user's numbers) ----
+   A 10/10 speed covers the 70 yards in 10 seconds, a 1/10 in 12. Stamina: every point under 10 adds 0.005 s to each
+   yard, so a 1/10 stamina runs the 70 in about 13 s instead of 10. Players start every point fresh and that
+   slowdown builds up over the first TIRE_YARDS they run in it (both teams). */
+const PACE_FAST = 10 / 70, PACE_SLOW = 12 / 70, STA_PACE = .005, TIRE_YARDS = 60;
+const paceOf = e => lerp(PACE_SLOW, PACE_FAST, (clamp(e.p.spd, 1, 10) - 1) / 9) + STA_PACE * (10 - clamp(e.p.sta, 1, 10)) * clamp((e.run || 0) / TIRE_YARDS, 0, 1);
+const speedOf = e => 1 / paceOf(e);                                   // yards per second
+function moveTo(e, tx, ty, sp, dt){
+  const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy);
+  if (d < .25) { e.moving = false; e.vx = e.vy = 0; return true; }
+  const s = Math.min(d, sp * dt); e.x += dx / d * s; e.y += dy / d * s; e.run = (e.run || 0) + s;
+  e.vx = dx / d * sp; e.vy = dy / d * sp;
+  if (Math.abs(dx) > .15) e.face = dx > 0 ? 1 : -1;
+  e.moving = true; e.anim += dt * sp * 2.3;                           // legs keep pace with speed
+  return d - s < .25;
+}
+
+/* ---- offense off the disc: everyone keeps cutting ----
+   Slots 0-2 are the handlers (HN, RS, SW): they stay within a short throw of the disc, level with it or just behind.
+   Slots 3-4 (MD, WG) cut underneath, 8 to 30 yards downfield. Slots 5-6 (ST, DP) go deep, 16 to 52 yards.
+   Cutters alternate coming back to the disc and going away from it, so somebody is always arriving open. */
+function refPoint(){ const h = holderEnt(); if (h) return h; const F = M.disc.fl; return F ? F.target : M.disc; }
+function setCut(e, i, side){
+  const R = refPoint(), d = dirOf(side), mates = teamOf(side);
+  let best = null;
+  for (let n = 0; n < 8; n++) {
+    let f, y;
+    if (i <= 2) { f = rnd(-5, 9); y = clamp(R.y + rnd(-17, 17), 3, 37); if (Math.abs(y - R.y) < 6 && Math.abs(f) < 6) y = clamp(R.y + (R.y < 20 ? 9 : -9), 3, 37); }
+    else if (i <= 4) { f = e.inCut ? rnd(8, 15) : rnd(18, 30); y = rnd(4, 36); }
+    else { f = e.inCut ? rnd(16, 26) : rnd(32, 52); y = rnd(5, 35); }
+    const p = { x:clamp(R.x + d * f, 3, FL - 3), y };
+    best = p;
+    if (mates.every(m => m === e || Math.hypot((m.tx ?? m.x) - p.x, (m.ty ?? m.y) - p.y) > 10)) break;
+  }
+  e.inCut = !e.inCut; e.tx = best.x; e.ty = best.y; e.cutWait = rnd(.15, .8);
+}
+function updateOffense(side, dt){
+  const arr = teamOf(side), h = M.disc.holder, F = M.disc.fl;
+  arr.forEach((e, i) => {
+    if (h && h.side === side && h.i === i) {                          // the thrower can't run: he pulls up after the catch, then stands on his pivot
+      if (e.slide) { const k = e.slide.t / STOP_TIME; e.x = clamp(e.x + e.slide.vx * k * dt, -3, FL + 3); e.y = clamp(e.y + e.slide.vy * k * dt, -3, FW + 3); e.anim += dt * 9 * k; e.moving = true; e.slide.t -= dt; if (e.slide.t <= 0) e.slide = null; return; }
+      e.moving = false; e.vx = e.vy = 0; e.face = dirOf(side); return;
+    }
+    if (M.phase === 'loose' && M.pick === i) { if (moveTo(e, M.disc.x, M.disc.y, speedOf(e), dt)) pickUp(side, i); return; }
+    if (F && F.pull && M.pick === i) { moveTo(e, F.land.x, F.land.y, speedOf(e), dt); return; }   // fielding the pull
+    if (F && M.chase && M.chase.off.includes(i) && F.thrower !== e) { moveTo(e, F.land.x, F.land.y, speedOf(e), dt); return; }   // going to get it
+    if (moveTo(e, e.tx, e.ty, speedOf(e) * .96, dt)) { e.cutWait -= dt; if (e.cutWait <= 0) setCut(e, i, side); }
+  });
+}
+/* ---- defense: man to man, a beat behind ----
+   Each defender re-reads his man every DEF_LAG seconds and stands on the side of him nearer the end zone he's
+   attacking. The thrower's defender marks him from 2.2 yards. When the disc goes up, the defender nearest to where
+   it's coming down goes for it. The one you control follows the joystick instead (and marks on his own when you let go). */
+const DEF_LAG = .45;
+function updateDefense(side, dt){
+  const arr = teamOf(side), off = otherSide(side), men = teamOf(off), d = dirOf(off), h = M.disc.holder, F = M.disc.fl;
+  arr.forEach((e, i) => {
+    if (side === 'us' && !M.auto && i === M.ctrl && userMoves(e, dt)) return;
+    const man = men[i];
+    if (F && !F.pull && M.chase && M.chase.def === i && F.t > .2) { moveTo(e, F.land.x, F.land.y, speedOf(e), dt); return; }
+    e.lagT -= dt;
+    if (e.lagT <= 0) { e.lagT = F ? DEF_LAG * .5 : DEF_LAG; e.lx = man.x; e.ly = man.y; }
+    const marking = h && h.side === off && h.i === i;
+    const gap = marking ? 2.2 : 1.3;
+    moveTo(e, clamp(e.lx + d * gap, 1, FL - 1), clamp(e.ly + (marking ? 0 : Math.sign(M.disc.y - e.ly) * .5), 1, FW - 1), speedOf(e) * .97, dt);
+    if (!e.moving) e.face = -d;
+  });
+}
+// the joystick: your defender runs where you push it; for a moment after you let go he stays put, then marks again
+const joy = { x:0, y:0, on:false };
+function joyReset(){ joy.x = joy.y = 0; joy.on = false; const n = $('#joyNub'); if (n) n.style.transform = ''; }
+function userMoves(e, dt){
+  const m = Math.hypot(joy.x, joy.y);
+  if (m > .18) {
+    const sp = speedOf(e) * Math.min(1, m * 1.15), ox = e.x, oy = e.y;
+    e.x = clamp(e.x + joy.x / m * sp * dt, -2, FL + 2); e.y = clamp(e.y + joy.y / m * sp * dt, -2, FW + 2);
+    const s = Math.hypot(e.x - ox, e.y - oy); e.run = (e.run || 0) + s; e.vx = (e.x - ox) / dt; e.vy = (e.y - oy) / dt;
+    if (Math.abs(joy.x) > .2) e.face = joy.x > 0 ? 1 : -1;
+    e.moving = true; e.anim += dt * sp * 2.3; e.manual = .7; e.lagT = 0;
+    return true;
+  }
+  if ((e.manual || 0) > 0) { e.manual -= dt; e.moving = false; e.vx = e.vy = 0; return true; }
+  return false;
+}
+
+/* ---- the disc (the heart of it) ----
+   A throw leaves fast and slows the whole way, so it floats in at the end. It is aimed at a spot D yards away:
+     flight time  T = (0.5 + 0.042 D) x (1.22 - 0.044 x strength)     a strong arm gets it there quicker
+     speed        falls off exponentially, arriving at 35% of its launch speed
+     height       chest high at both ends, rising 0.06 yd per yard in between: a short pass stays low the whole
+                  way (anyone near its path can get a hand on it), a long one goes up over everybody and comes down
+   Past the spot it keeps drifting and settles to the grass over the next half second or so.
+   Strength also sets the longest throw: 35 yards at 1/10 up to 70 at 10/10.
+   Throwing is accuracy (user's numbers): the most a throw can miss by is 20 yards at 1/10 down to 5 at 10/10, any
+   amount up to that being equally likely, so anyone can hit one dead on but a good thrower does it far more often.
+   That is the miss at the thrower's full distance; shorter throws miss in proportion (a quarter of it at point blank). */
+const STALL = 10;                                                     // real seconds to throw it
+const STOP_TIME = .32;                                                // seconds a catcher takes to pull up
+const ARRIVE = .35, REACH_Z = 2.7, CATCH_R = 2, DEF_R = 1.6, CLEAN_R = 1.2, LIVE_AFTER = 3.5;
+const maxRange = p => 35 + (clamp(p.str, 1, 10) - 1) * 35 / 9;
+const maxErr = p => 20 - (clamp(p.thr, 1, 10) - 1) * 15 / 9;
+const errAt = (p, D) => maxErr(p) * (.25 + .75 * clamp(D / maxRange(p), 0, 1));
+const flightTime = (D, str) => (.5 + .042 * D) * (1.22 - .044 * clamp(str, 1, 10));
+function throwDisc(side, e, T, opts = {}){
+  const D0 = Math.max(3, dist(e, T));
+  // where it actually goes: off by up to errAt, in any direction
+  const er = opts.pull ? rnd(0, 6) : Math.random() * errAt(e.p, D0), ea = Math.random() * Math.PI * 2;
+  const A = { x:T.x + Math.cos(ea) * er, y:T.y + Math.sin(ea) * er };
+  const D = Math.max(3, dist(e, A)), ux = (A.x - e.x) / D, uy = (A.y - e.y) / D;
+  const Tf = opts.pull ? 3 + D * .012 : flightTime(D, e.p.str), k = Math.log(1 / ARRIVE) / Tf;
+  const h = opts.pull ? 5 : clamp(D * .06 - .3, 0, 4.6), tail = .45 + D * .006;
+  M.disc.holder = null;
+  M.disc.fl = { side, thrower:e, from:{ x:e.x, y:e.y }, ux, uy, D, T:Tf, k, h, tail, t:0, v:0, s:0, target:A, intended:T, land:A, pull:!!opts.pull, user:!!opts.user };
+  [...M.our, ...M.th].forEach(p => { p.tried = false; p.dPrev = 1e9; });
+  e.poseT = .28; e.face = ux >= 0 ? 1 : -1;
+  // who goes for it: the two teammates nearest where it's coming down, and the nearest defender
+  const mates = teamOf(side), foes = teamOf(otherSide(side)), me = mates.indexOf(e);
+  const order = mates.map((m, i) => ({ i, d:dist(m, A) })).filter(o => o.i !== me).sort((a, b) => a.d - b.d);
+  M.chase = opts.pull ? { off:[], def:-1 } : { off:order.slice(0, 2).map(o => o.i), def:nearestIdx(foes, A) };
+  M.phase = opts.pull ? 'pull' : 'air'; M.stall = 0; M.aim = null;
+  if (!opts.pull) { M.st[side].att++; if (side === 'us') pbFor(M.pbox, e.p).att++; }
+}
+function updateDisc(dt){
+  const d = M.disc, F = d.fl, h = holderEnt();
+  if (h) { d.x = h.x + (h.face || 1) * .55; d.y = h.y + .05; d.z = 1.05; return; }
+  if (!F) { d.z = 0; return; }
+  F.t += dt;
+  const s = F.D * (1 - Math.exp(-F.k * F.t)) / (1 - ARRIVE);
+  F.v = F.D * F.k * Math.exp(-F.k * F.t) / (1 - ARRIVE); F.s = s;
+  d.x = F.from.x + F.ux * s; d.y = F.from.y + F.uy * s;
+  const u = F.t / F.T;
+  d.z = u <= 1 ? 1.3 + 4 * F.h * u * (1 - u) : 1.3 * (1 - Math.pow((F.t - F.T) / F.tail, 2));
+  if (d.z <= 0) { d.z = 0; grounded(); return; }
+  if (s < LIVE_AFTER || d.z > REACH_Z) return;                        // just out of the hand, or over everybody's head
+  // anyone the disc passes within reach of gets one try at it, at the moment it is closest to him
+  const cands = [];
+  const look = (e, side, i) => {
+    if (e.tried || e === F.thrower) return;
+    if (F.pull && side === F.side) return;                            // the pulling team can't touch its own pull
+    const dd = dist(e, d), was = e.dPrev; e.dPrev = dd;
+    const own = side === F.side;
+    // a teammate it wasn't meant for lets a fast one go by rather than getting a finger on it; defenders need to be closer
+    if (own && !F.pull && !(M.chase && M.chase.off.includes(i)) && F.v > 12) return;
+    if (dd <= (own ? CATCH_R : DEF_R) && (dd <= .8 || dd > was)) cands.push({ e, side, i, dd });
+  };
+  M.our.forEach((e, i) => look(e, 'us', i)); M.th.forEach((e, i) => look(e, 'them', i));
+  cands.sort((a, b) => a.dd - b.dd);
+  for (const c of cands) { if (!M.disc.fl) break; tryCatch(c); }
+}
+/* Catching: the slower it's floating when it gets to you, the easier.
+     a teammate: (88% + 1.1% per catching point) at 11 yd/s or slower, losing 4% of that for every yd/s faster;
+                 15% less if he has to lay out (more than 1.2 yd away), 10% less above his head, 5% less with a
+                 defender on him
+     a defender: (4% + 1.4% per catching point) within 1.6 yd, same speed rule, 30% less at full stretch or above
+                 his head; the one you're running yourself gets double. Anything he gets is an interception. */
+function tryCatch({ e, side, i, dd }){
+  const F = M.disc.fl, d = M.disc, own = side === F.side;
+  e.tried = true;
+  const sp = clamp(1 - Math.max(0, F.v - 11) * .04, .15, 1), far = dd > CLEAN_R, high = d.z > 2;
+  let p;
+  if (F.pull) p = .97;
+  else if (own) {
+    const guarded = teamOf(otherSide(side)).some(o => dist(o, e) < 1.5);
+    p = (.88 + .011 * e.p.cat) * sp * (far ? .85 : 1) * (high ? .9 : 1) * (guarded ? .95 : 1);
+  } else p = (.04 + .014 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (side === 'us' && !M.auto && i === M.ctrl ? 2 : 1);
+  e.poseT = .4; if (far) e.dive = .5; else if (high) e.z = .8;
+  if (Math.random() >= p) {
+    if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).to++; turnover({ x:d.x, y:d.y }, otherSide(side), side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }
+    return;                                                           // a defender who misses just watches it go by
+  }
+  // caught
+  const thrower = F.thrower, thrSide = F.side, pull = F.pull;
+  // he has it: he must stop as quickly as he can (a couple of steps, under a yard and a half) and plant a pivot foot
+  d.fl = null; d.holder = { side, i }; M.chase = null;
+  e.slide = Math.hypot(e.vx || 0, e.vy || 0) > 1 ? { vx:e.vx, vy:e.vy, t:STOP_TIME } : null; e.moving = false; e.vx = e.vy = 0;
+  if (pull) { M.off = side; M.phase = 'live'; M.stall = 0; M.think = rnd(.9, 1.6); afterCatch(side); return; }
+  if (own) {
+    M.st[side].cmp++; if (side === 'us') { pbFor(M.pbox, thrower.p).cmp++; pbFor(M.pbox, e.p).rec++; }
+    if (inGoal(e, side)) { goal(side, e, thrower); return; }
+    if (!inField(e)) { d.holder = null; turnover({ x:e.x, y:e.y }, otherSide(side), 'OUT OF BOUNDS'); M.st[side].to++; return; }
+    M.phase = 'live'; M.stall = 0; M.think = rnd(.8, 1.7); afterCatch(side);
+    if (M.buzzer) endQuarter();
+    return;
+  }
+  // an interception
+  M.st[thrSide].to++; M.st[side].d++;
+  if (thrSide === 'us') pbFor(M.pbox, thrower.p).to++; else pbFor(M.pbox, e.p).d++;
+  M.off = side; M.flash = .4;
+  banner(side === 'us' ? 'INTERCEPTED!' : 'PICKED OFF', `${e.p.fn[0]}. ${e.p.ln}`, 1000);
+  if (inGoal(e, side)) { goal(side, e, null); return; }               // caught in the end zone he attacks: that's a score
+  if (!inField(e)) { d.holder = null; turnover({ x:e.x, y:e.y }, side, ''); return; }
+  M.phase = 'live'; M.stall = 0; M.think = rnd(1, 1.8); afterCatch(side); pickCtrl();
+  if (M.buzzer) endQuarter();
+}
+function afterCatch(side){ teamOf(side).forEach((e, i) => { if (!(M.disc.holder && M.disc.holder.i === i)) setCut(e, i, side); }); }
+// it hit the grass: the other team's disc where it landed (or where it went out)
+function grounded(){
+  const F = M.disc.fl, d = M.disc; d.fl = null; M.chase = null;
+  if (F.pull) {                                                       // an uncaught pull: play it from where it stopped, or the brick mark if it went out
+    const out = !inField(d), spot = out ? { x:F.side === 'us' ? GOAL_R - 20 : GOAL_L + 20, y:FW / 2 } : { x:d.x, y:d.y };
+    turnover(spot, otherSide(F.side), ''); return;
+  }
+  M.st[F.side].to++; if (F.side === 'us') pbFor(M.pbox, F.thrower.p).to++;
+  turnover({ x:d.x, y:d.y }, otherSide(F.side), inField(d) ? (F.side === 'us' ? 'INCOMPLETE' : 'THEY MISS') : 'OUT OF BOUNDS');
+}
+// the disc is on the ground for `side` at a spot: brought back in bounds, and out of an end zone to the goal line
+function turnover(spot, side, text){
+  const d = M.disc;
+  d.fl = null; d.holder = null; d.x = clamp(spot.x, GOAL_L, GOAL_R); d.y = clamp(spot.y, 1.5, FW - 1.5); d.z = 0;
+  M.off = side; M.phase = 'loose'; M.stall = 0; M.aim = null; M.chase = null;
+  M.pick = nearestIdx(teamOf(side), d);
+  teamOf(side).forEach((e, i) => { if (i !== M.pick) setCut(e, i, side); });
+  if (text) banner(text, side === 'us' ? 'Your disc' : 'Their disc', 800);
+  pickCtrl(); hud();
+  if (M.buzzer) endQuarter();
+}
+function pickUp(side, i){
+  const e = teamOf(side)[i];
+  M.disc.holder = { side, i }; e.moving = false; e.vx = e.vy = 0; M.phase = 'live'; M.stall = 0; M.think = rnd(.9, 1.6);
+  afterCatch(side); hud();
+}
+// when they have it: you start on the defender nearest the disc who isn't the one marking the thrower
+function pickCtrl(){
+  if (M.off !== 'them') return;
+  const h = M.disc.holder, mark = h && h.side === 'them' ? h.i : (M.phase === 'loose' ? M.pick : -1);
+  const i = nearestIdx(M.our, M.disc, mark); if (i >= 0) M.ctrl = i;
+}
+function goal(side, e, thrower){
+  if (side === 'us') { M.us++; M.box[e.p.id] = (M.box[e.p.id] || 0) + 1; if (thrower) pbFor(M.pbox, thrower.p).ast++; }
+  else M.them++;
+  M.phase = 'score'; M.scoreT = 1.7; M.flash = .6; M.pop = .7; M.shake = .2; M.aim = null; e.poseT = 1.2;
+  banner(side === 'us' ? 'GOAL!' : `${M.opp.city} score`, side === 'us' ? `${e.p.fn[0]}. ${e.p.ln}${thrower ? ' from ' + thrower.p.ln : ''}` : `${M.us}-${M.them}`, 1400, side !== 'us');
+  M.lastGoal = side; hud();
+}
+/* ---- the pull: the team that just scored (or lost the flip) throws off from its own goal line ---- */
+function startPull(receiving){
+  const pulling = otherSide(receiving), rd = dirOf(receiving);
+  const R = teamOf(receiving), P = teamOf(pulling);
+  const ownLine = side => side === 'us' ? GOAL_L : GOAL_R;           // we defend the left end zone, they defend the right
+  [...M.our, ...M.th].forEach(e => { e.slide = null; e.run = 0; e.z = 0; e.dive = 0; e.poseT = 0; e.manual = 0; e.cutWait = 0; e.vx = e.vy = 0; e.moving = false; });
+  R.forEach((e, i) => { e.x = ownLine(receiving) + rd * rnd(3, 12); e.y = 4 + i * 5.3 + rnd(-1, 1); e.tx = e.x; e.ty = e.y; e.face = rd; });
+  P.forEach((e, i) => { e.x = ownLine(pulling); e.y = 4 + i * 5.3; e.tx = e.x; e.ty = e.y; e.face = -rd; e.lx = R[i].x; e.ly = R[i].y; e.lagT = 0; });
+  M.off = receiving; M.buzzer = false; M.aim = null; M.stall = 0;
+  const puller = P[0];
+  M.disc.holder = { side:pulling, i:0 };
+  const T = { x:ownLine(receiving) + rd * rnd(12, 26), y:rnd(10, 30) };
+  throwDisc(pulling, puller, T, { pull:true });
+  M.off = receiving;
+  M.pick = nearestIdx(R, M.disc.fl.target);
+  R.forEach((e, i) => { if (i !== M.pick) setCut(e, i, receiving); });
+  pickCtrl(); hud();
+}
+/* ---- the computer's thrower ----
+   He looks for a moment, then throws to the teammate who is most open and gains the most, leading him to where
+   he'll be when it gets there. If nobody is open he waits, and by a stall count of 7 he throws to the best there is. */
+function aiThrow(side, dt){
+  const h = M.disc.holder; if (!h || h.side !== side) return;
+  M.think -= dt; if (M.think > 0 || teamOf(side)[h.i].slide) return;
+  const e = teamOf(side)[h.i], foes = teamOf(otherSide(side)), d = dirOf(side), R = maxRange(e.p);
+  let best = null;
+  teamOf(side).forEach((m, i) => {
+    if (i === h.i) return;
+    const D0 = dist(e, m), lead = flightTime(D0, e.p.str) * .85;
+    const P = { x:clamp(m.x + (m.vx || 0) * lead, 2, FL - 2), y:clamp(m.y + (m.vy || 0) * lead, 2, FW - 2) }, D = dist(e, P);
+    if (D < 5 || D > R) return;
+    const open = Math.min(...foes.map((f, k) => k === h.i ? 99 : dist(f, P)));
+    const gain = (P.x - e.x) * d;
+    const sc = gain * .55 + Math.min(open, 8) * 2.4 - Math.max(0, D - 30) * .35 + rnd(0, 6) + (inGoal(P, side) ? 8 : 0);
+    if (!best || sc > best.sc) best = { sc, P, open };
+  });
+  if (!best) { M.think = .3; return; }
+  if (best.open < 2.4 && M.stall < 7) { M.think = .3; return; }
+  throwDisc(side, e, best.P);
+}
+
+/* ---- the loop ---- */
+function update(dt){
+  if (!M || paused) return;
+  M.flash = Math.max(0, M.flash - dt); if (M.shake > 0) M.shake -= dt; if (M.pop > 0) M.pop -= dt;
+  for (const e of [...M.our, ...M.th]) { if (e.poseT > 0) e.poseT -= dt; if (e.dive > 0) e.dive -= dt; if (e.z > 0) e.z = Math.max(0, e.z - dt * 3); }
+  const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
+  if (play) { M.clock -= dt * G.speed; M.st[M.off].poss += dt * G.speed; }
+  if (M.phase === 'score') {
+    M.scoreT -= dt;
+    if (M.scoreT <= 0) { if (M.q > 4 || M.clock <= 0) endQuarter(); else startPull(otherSide(M.lastGoal)); }
+  } else if (play) {
+    if (M.phase === 'live') {
+      M.stall += dt;
+      if (M.stall >= STALL) { const h = holderEnt(); M.st[M.off].to++; if (M.off === 'us') pbFor(M.pbox, h.p).to++; turnover({ x:h.x, y:h.y }, otherSide(M.off), 'STALLED'); }
+      else if (M.off === 'them' || M.auto) aiThrow(M.off, dt);
+    }
+    if (M && play) { updateOffense(M.off, dt); updateDefense(otherSide(M.off), dt); }
+    updateDisc(dt);
+    if (M && M.clock <= 0 && ['live', 'loose', 'pull', 'air'].includes(M.phase)) {
+      M.clock = 0;
+      if (M.phase === 'air') M.buzzer = true; else endQuarter();      // a throw in the air at the buzzer plays out
+    }
+  }
+  if (M) hud();
+}
+function endQuarter(){
+  if (M.phase === 'break' || M.phase === 'done') return;              // already over (a leftover timer can call again)
+  M.clock = Math.max(0, M.clock); M.buzzer = false; M.aim = null; M.disc.fl = null;
+  const q = M.q, final = q >= 4 && M.us !== M.them;
+  M.phase = final ? 'done' : 'break'; hud();
+  const title = final ? 'FINAL' : q === 1 ? 'END OF 1ST' : q === 2 ? 'HALFTIME' : q === 3 ? 'END OF 3RD' : q === 4 ? 'END OF REGULATION' : 'END OF OT';
+  const span = final ? 'Full game' : q === 1 ? '1st quarter' : q === 2 ? '1st half' : q === 3 ? 'Quarters 1–3' : 'Full game so far';
+  showStats(title, span, final ? 'Finish' : q >= 4 ? 'OT' : 'Q' + (q + 1), () => {
+    if (final) { finishLive(M.id); return; }
+    M.q++; M.clock = M.q > 4 ? OT_LEN : QUARTER;
+    startPull(quarterStarter(M.q)); hud();
+    if (M.q > 4) banner('OVERTIME', 'Next goal wins', 1400);
+  });
+}
+function showStats(title, span, cta, onGo){
+  const U = M.st.us, T = M.st.them, t = M.t, o = M.opp;
+  const frac = (m, a) => `${m}/${a} <span class="pc">(${a ? Math.round(m / a * 100) : 0}%)</span>`;
+  const time = sec => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+  const rows = [
+    ['Completions', frac(U.cmp, U.att), frac(T.cmp, T.att)],
+    ['Turnovers', U.to, T.to],
+    ['Interceptions', U.d, T.d],
+    ['Possession', time(U.poss), time(T.poss)],
+  ];
+  const el = $('#stats');
+  el.innerHTML = `<div class="st-card">
+    <div class="st-title">${title}</div><div class="st-span">${span}</div>
+    <div class="st-score">
+      <div class="st-team" style="background:${t.c1};color:${t.c2}">${esc(t.abbr)}</div><div class="st-num">${M.us}</div>
+      <div class="st-dash">–</div>
+      <div class="st-num">${M.them}</div><div class="st-team" style="background:${o.c1};color:${o.c2}">${esc(o.abbr)}</div>
+    </div>
+    <table class="st-table">${rows.map(([k, u, v]) => `<tr><td class="u">${u}</td><th>${k}</th><td class="v">${v}</td></tr>`).join('')}</table>
+    <button class="btn go" id="stGo">${cta}</button></div>`;
+  el.hidden = false;
+  $('#stGo').onclick = () => { el.hidden = true; onGo(); };
+}
+function finishLive(id){
+  if (!M || M.id !== id) return;
+  const done = M; M = null;
+  cancelAnimationFrame(raf); closeSheet(); joyReset();
+  $('#game').hidden = true; $('#ui').hidden = false; $('#joy').hidden = true;
+  const opp = teamById(done.opp.id); if (opp) fakeBox(teamPlayers(opp), done.them);
+  endMatch(done, done.us, done.them, done.box, done.pbox);
+}
+function simRest(){
+  if (!M) return;
+  const U = userRatings(), O = teamR(M.opp);
+  const quartersLeft = (M.q <= 4 ? 4 - M.q : 0) + M.clock / QUARTER;
+  const n = Math.round(simPoss() / 4 * quartersLeft);
+  const one = () => { const g = simPossession(U, O); simCredit(M.box, M.pbox); M.us += g; M.them += simPossession(O, U); };
+  for (let i = 0; i < n; i++) one();
+  while (M.us === M.them) one();
+  finishLive(M.id);
+}
+
+/* ---- input ----
+   Offense: press anywhere, drag back like a slingshot and let go. The throw goes the opposite way on the screen, and
+   the farther you pull the farther it goes (AIM_GAIN screen pixels of throw for each pixel of drag), up to the
+   thrower's longest throw. The dotted arc and ring show where you're aiming and how far off it could land.
+   Defense: the stick in the bottom left runs your defender; tap one of your players to take him over instead. */
+const AIM_GAIN = 5, AIM_MIN = 7;
+function canvasPt(ev){ const r = cv.getBoundingClientRect(); return { x:(ev.clientX - r.left) / r.width * CW, y:(ev.clientY - r.top) / r.height * CH }; }
+function aimTarget(){
+  const A = M.aim, h = holderEnt(); if (!A || !h) return null;
+  const dx = A.cx - A.x0, dy = A.cy - A.y0, len = Math.hypot(dx, dy);
+  if (len < AIM_MIN) return null;
+  let wx = -dx * AIM_GAIN / PXF, wy = -dy * AIM_GAIN / PYF;           // opposite the drag, in yards
+  const D = Math.hypot(wx, wy), R = maxRange(h.p), k = D > R ? R / D : 1;
+  wx *= k; wy *= k;
+  return { x:h.x + wx, y:h.y + wy, D:Math.min(D, R), max:D >= R };
+}
+cv.addEventListener('pointerdown', ev => {
+  if (!M || paused) return;
+  const pt = canvasPt(ev);
+  if (M.off === 'us' && !M.auto && M.phase === 'live' && holderEnt()) {
+    ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch {}
+    M.aim = { x0:pt.x, y0:pt.y, cx:pt.x, cy:pt.y, id:ev.pointerId };
+  } else if (M.off === 'them' && ['live', 'air', 'loose', 'pull'].includes(M.phase)) {
+    let best = -1, bd = 18;
+    M.our.forEach((e, i) => { const d = Math.hypot(sx(e.x) - pt.x, sy(e.y) - 12 - pt.y); if (d < bd) { bd = d; best = i; } });
+    if (best >= 0) { M.ctrl = best; M.our[best].manual = 0; }
+  }
+});
+cv.addEventListener('pointermove', ev => { if (M && M.aim && ev.pointerId === M.aim.id) { const pt = canvasPt(ev); M.aim.cx = pt.x; M.aim.cy = pt.y; } });
+const aimUp = ev => {
+  if (!M || !M.aim || ev.pointerId !== M.aim.id) return;
+  const T = ev.type === 'pointercancel' ? null : aimTarget(), h = holderEnt();
+  M.aim = null;
+  if (T && h && !h.slide && M.phase === 'live' && M.off === 'us' && !paused) throwDisc('us', h, T, { user:true });
+};
+cv.addEventListener('pointerup', aimUp); cv.addEventListener('pointercancel', aimUp);
+// the joystick
+(() => {
+  const el = $('#joy'), nub = $('#joyNub'); let id = null;
+  const set = ev => {
+    const r = el.getBoundingClientRect(), R = r.width / 2;
+    let x = (ev.clientX - (r.left + R)) / R, y = (ev.clientY - (r.top + R)) / R; const m = Math.hypot(x, y);
+    if (m > 1) { x /= m; y /= m; }
+    joy.x = x; joy.y = y; joy.on = true; nub.style.transform = `translate(${x * R * .6}px, ${y * R * .6}px)`;
+  };
+  el.addEventListener('pointerdown', ev => { ev.preventDefault(); id = ev.pointerId; try { el.setPointerCapture(id); } catch {} set(ev); });
+  el.addEventListener('pointermove', ev => { if (ev.pointerId === id) set(ev); });
+  const end = ev => { if (ev.pointerId === id) { id = null; joyReset(); } };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  el.addEventListener('contextmenu', ev => ev.preventDefault());
+})();
+$('#pauseBtn').addEventListener('click', () => { if (!M) return; paused = true; M.aim = null; joyReset(); speedSheet(true); });
+
+/* ---- draw ---- */
+function drawAim(){
+  const T = aimTarget(), h = holderEnt(); if (!T || !h) return;
+  const hh = clamp(T.D * .06 - .3, 0, 4.6), n = Math.max(4, Math.round(T.D / 3.5));
+  for (let i = 1; i < n; i++) {                                        // the flight: a dotted arc, and its line along the grass
+    const u = i / n, x = lerp(h.x, T.x, u), y = lerp(h.y, T.y, u), z = 1.3 + 4 * hh * u * (1 - u);
+    ctx.fillStyle = 'rgba(10,50,20,.35)'; ctx.fillRect(Math.round(sx(x)), Math.round(sy(y)), 2, 1);
+    ctx.fillStyle = T.max ? '#ffd23f' : '#ffffff'; ctx.fillRect(Math.round(sx(x)), Math.round(sy(y, z)), 2, 2);
+  }
+  // where it's aimed, and the ring it could land anywhere inside
+  const X = Math.round(sx(T.x)), Y = Math.round(sy(T.y)), er = errAt(h.p, T.D);
+  ctx.fillStyle = 'rgba(255,255,255,.8)';
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 22) ctx.fillRect(Math.round(X + Math.cos(a) * er * PXF), Math.round(Y + Math.sin(a) * er * PYF), 1, 1);
+  ctx.fillStyle = '#1b2440'; ctx.fillRect(X - 4, Y - 1, 9, 3); ctx.fillRect(X - 1, Y - 4, 3, 9);
+  ctx.fillStyle = T.max ? '#ffd23f' : '#ffffff'; ctx.fillRect(X - 3, Y, 7, 1); ctx.fillRect(X, Y - 3, 1, 7);
+}
+function draw(){
+  if (!M) return;
+  ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.imageSmoothingEnabled = false;
+  const D = M.disc, T = aimTarget(), h = holderEnt();
+  // the thrower stays near the middle; while you aim the view slides toward where you're aiming, and it follows the disc in the air
+  let focus = D.x + (h ? dirOf(M.off) * 5 : 0);
+  if (T && h) focus = clamp((h.x + T.x) / 2, h.x - (CW / 2 - 34) / PXF, h.x + (CW / 2 - 34) / PXF);
+  const target = clamp(X0 + focus * PXF - CW / 2, 0, WORLD_W - CW);
+  cam = lerp(cam, target, T ? .1 : .12);
+  if (M.shake > 0) { const a = M.shake / .2; ctx.fillStyle = '#0b1433'; ctx.fillRect(0, 0, CW, CH); ctx.translate(Math.round((Math.random() - .5) * 3 * a), Math.round((Math.random() - .5) * 2 * a)); }
+  ctx.drawImage(courtCv, Math.round(cam), 0, CW, CH, 0, 0, CW, CH);
+  cam = Math.round(cam * 100) / 100;
+  if (M.pop > 0) for (let i = 0; i < 5; i++) { const fx = Math.floor(Math.random() * CW), fy = 3 + Math.floor(Math.random() * (Y0 - 22)); ctx.fillStyle = '#ffffff'; ctx.fillRect(fx, fy - 1, 1, 3); ctx.fillRect(fx - 1, fy, 3, 1); }
+  const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
+  const ents = [
+    ...M.our.map((e, i) => ({ y:e.y, f:() => drawPlayer(e, M.uni.us, play && !M.auto && ((M.off === 'us' && h === e) || (M.off === 'them' && i === M.ctrl)) ? '#ffd23f' : null) })),
+    ...M.th.map(e => ({ y:e.y, f:() => drawPlayer(e, M.uni.them, null) })),
+    { y:-2, f:() => { drawBench('us'); drawBench('them'); } },
+    { y:D.y + (h ? .1 : 0), f:drawDisc },
+  ].sort((a, b) => a.y - b.y);
+  ents.forEach(x => x.f());
+  drawAim();
+}
+function loop(now){
+  const dt = clamp((now - lastT) / 1000, 0, .05); lastT = now;
+  update(dt); draw();
+  if (M) raf = requestAnimationFrame(loop);
+}
+
+/* ============================ boot ============================ */
+// the old single save moves into slot 1 (once), then the game opens on the save-slot screen
+try {
+  const old = localStorage.getItem(CACHE);
+  if (old) { if (!localStorage.getItem(slotKey(1))) localStorage.setItem(slotKey(1), old); localStorage.setItem(CACHE + '.migrated', old); localStorage.removeItem(CACHE); }
+} catch {}
+screen = 'slots'; render();
+(async () => {
+  const use = window.claude?.use; if (!use) return;
+  DB = await use('db').catch(() => null); if (!DB) return;
+  try {
+    for (let n = 1; n <= SLOTS; n++) {
+      const snap = await DB.doc('saves/slot' + n).get();
+      if (snap.exists && snap.data().json) slotRemote[n] = snap.data().json;
+    }
+    if (!slotRaw(1)) {                                                // the old database save becomes slot 1
+      const main = await DB.doc('saves/main').get();
+      if (main.exists && main.data().json) {
+        const j = main.data().json, r = JSON.parse(j);
+        if (r && r.v >= 2) { slotRemote[1] = j; await DB.doc('saves/slot1').set({ json:j, at:Date.now() }); await DB.doc('saves/main').set({ json:'', moved:'slot1', at:Date.now() }); }   // moved, so a reset stays reset
+      }
+    }
+    if (!M && SLOT === null) render();
+  } catch (e) { console.warn(e); }
+})();
+})();
+</script>
