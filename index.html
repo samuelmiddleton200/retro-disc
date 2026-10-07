@@ -2572,6 +2572,25 @@ function aimTarget(){
   wx *= k; wy *= k;
   return { x:h.x + wx, y:h.y + wy, D:Math.min(D, R), max:D >= R };   // exactly where you aim: no aim help (the user had it taken out)
 }
+cv.addEventListener('pointerdown', ev => {
+  if (!M || paused) return;
+  const pt = canvasPt(ev);
+  if (M.off === 'us' && !M.auto && M.phase === 'live' && holderEnt()) {
+    ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch {}
+    M.aim = { x0:pt.x, y0:pt.y, cx:pt.x, cy:pt.y, id:ev.pointerId };
+  }
+});
+cv.addEventListener('pointermove', ev => { if (M && M.aim && ev.pointerId === M.aim.id) { const pt = canvasPt(ev); M.aim.cx = pt.x; M.aim.cy = pt.y; } });
+const aimUp = ev => {
+  if (!M || !M.aim || ev.pointerId !== M.aim.id) return;
+  const T = ev.type === 'pointercancel' ? null : aimTarget(), h = holderEnt();
+  M.aim = null;
+  if (T && h && !h.slide && M.phase === 'live' && M.off === 'us' && !paused) throwDisc('us', h, T, { user:true });
+};
+cv.addEventListener('pointerup', aimUp); cv.addEventListener('pointercancel', aimUp);
+$('#pauseBtn').addEventListener('click', () => { if (!M) return; paused = true; M.aim = null; speedSheet(true); });
+
+/* ---- draw ---- */
 function drawAim(){
   const T = aimTarget(), h = holderEnt(); if (!T || !h) return;
   const hh = clamp(T.D * .06 - .3, 0, 4.6), n = Math.max(4, Math.round(T.D / 3.5));
