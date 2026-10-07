@@ -2016,11 +2016,13 @@ function drawHalf(g, spr, X, top, face){
   if ((face || 1) < 0) { g.save(); g.translate(X, 0); g.scale(-1, 1); g.drawImage(spr, -3.5, top, 7, h); g.restore(); }
   else g.drawImage(spr, X - 3.5, top, 7, h);
 }
-// a jersey number in the 3 x 5 pixel font at half size, centered on the chest
+// a jersey number in the 3 x 5 pixel font, centered on the chest. Each font pixel is NUM_PX of a field pixel (3 real
+// pixels at the normal zoom): a quarter smaller than the jersey's own pixels, so the shirt color shows around it (user)
+const NUM_PX = .375;
 function drawSmallNumber(g, X, top, numRow, num, color){
-  const ds = String(num).split(''), w = ds.length * 4 - 1, x0 = X - 3.5 + Math.ceil((14 - w) / 2) / 2, y0 = top + numRow / 2;
+  const ds = String(num).split(''), w = (ds.length * 4 - 1) * NUM_PX, x0 = Math.round((X - w / 2) * 8) / 8, y0 = Math.round((top + numRow / 2 + .25) * 8) / 8;
   g.fillStyle = color;
-  ds.forEach((d, i) => (FONT[d] || FONT[' ']).forEach((r, y) => [...r].forEach((ch, x) => { if (ch === '#') g.fillRect(x0 + (i * 4 + x) / 2, y0 + y / 2, .5, .5); })));
+  ds.forEach((d, i) => (FONT[d] || FONT[' ']).forEach((r, y) => [...r].forEach((ch, x) => { if (ch === '#') g.fillRect(x0 + (i * 4 + x) * NUM_PX, y0 + y * NUM_PX, NUM_PX, NUM_PX); })));
 }
 function drawSmall(g, p, U, frame, X, feetY, face){
   const spr = sprite(p, U, frame), top = feetY - spr.height / 2;
@@ -2097,7 +2099,7 @@ if (window.visualViewport) visualViewport.addEventListener('resize', () => { if 
 function startMatch(){
   const ng = nextGameInfo(); if (!ng) return;
   const t = userTeam();
-  const blank = () => ({ cmp:0, att:0, to:0, d:0, poss:0 });
+  const blank = () => ({ cmp:0, att:0, to:0, d:0, poss:0, drop:0, miss:0, stall:0 });   // drop / miss / stall: how that team gave the disc away (shown at halftime and full time)
   const ks = kitSel || { us:G.kit || { j:'home', s:'home' }, them:{ j:'away', s:'away' } };
   const ent = (p, face) => ({ p, x:55, y:20, z:0, tx:55, ty:20, vx:0, vy:0, anim:0, moving:false, face, run:0, lagT:0, lx:55, ly:20, cutWait:0, inCut:false, tried:false, dPrev:1e9 });
   M = { ...ng, t, uni:{ us:uniColors(t, ks.us), them:uniColors(ng.opp, ks.them) }, id:uid(), us:0, them:0, box:{}, pbox:{}, st:{ us:blank(), them:blank() }, to:gameTo(), half:false, phase:'idle', flash:0, shake:0, pop:0,
@@ -2237,16 +2239,22 @@ function updateOffense(side, dt){
      2  middle: about 22 yards past it
      3  the wing: 17 yards past it, on whichever sideline their wing is working
      4  deep: at least 26 yards past it, and always a few yards behind their deepest man
-   Inside his patch a defender only leans ZONE_TIGHT of the way toward an attacker who comes within ZONE_NEAR yards
+   Inside his patch a defender only leans part of the way toward an attacker who comes within a few yards
    of his spot: he never follows a man, so cutters come well open, the way receivers do against zone coverage in
-   football. He re-reads the play every DEF_LAG seconds.
-   A throw catches the defense looking: the offense goes for it at once, the defense takes DEF_REACT seconds to notice,
-   and then the defender nearest to where it's coming down breaks on it, at CHASE_SPEED of his pace (he is reading it
-   late; the receiver knew where it was going).
+   football. He re-reads the play every DEF_LAG seconds. (How far, how near: see ZONE.)
+   A throw catches the defense looking: the offense goes for it at once, the defense takes a moment to notice, and then
+   the defender nearest to where it's coming down breaks on it.
    You don't play defense (user, 2026-10-07): your five run this zone on their own. */
-const DEF_LAG = .5, DEF_REACT = .6, ZONE_TIGHT = .15, ZONE_NEAR = 8, CHASE_SPEED = .9;   // loose on purpose (user: "like football, someone can get 10 yards open")
+const DEF_LAG = .5;
+/* The two teams don't defend alike. Theirs is loose on purpose (user: "like football, someone can get 10 yards open").
+   Yours, which you don't control, is a good deal sharper: it leans further toward receivers, sees a throw sooner,
+   chases it at full pace and holds on to more of what it reaches. That, and the computer's aim, is how the game is
+   kept winnable for a new one-star team. tight: how far he leans to an attacker within `near` yards; react: seconds
+   before he notices a throw; chase: share of his pace going for it; pick: multiplier on his interception chance. */
+const ZONE = { them:{ tight:.15, near:8, react:.6, chase:.9, pick:1 }, us:{ tight:.5, near:11, react:.3, chase:1, pick:1.7 } };
 function zoneSpot(i, off){
-  const F = M.disc.fl, h = holderEnt(), R = F && !F.pull ? (F.t > DEF_REACT ? F.target : F.from) : h || (F ? F.target : M.disc);
+  const Z = ZONE[otherSide(off)];
+  const F = M.disc.fl, h = holderEnt(), R = F && !F.pull ? (F.t > Z.react ? F.target : F.from) : h || (F ? F.target : M.disc);
   const d = dirOf(off), men = teamOf(off), fwd = f => clamp(R.x + d * f, 1, FL - 1);
   if (i === 0) return { x:fwd(3), y:R.y };
   let base;
@@ -2255,16 +2263,16 @@ function zoneSpot(i, off){
   else if (i === 3) base = { x:fwd(17), y:men[3] && men[3].y < FW / 2 ? 8 : FW - 8 };
   else { const deepest = Math.max(...men.map(m => (m.x - R.x) * d)); base = { x:fwd(Math.max(26, deepest + 4)), y:lerp(FW / 2, men[4] ? men[4].y : FW / 2, .5) }; }
   // shade toward the nearest attacker in the patch (never the man with the disc), without leaving it
-  let near = null, nd = ZONE_NEAR;
+  let near = null, nd = Z.near;
   men.forEach(m => { if (m === h) return; const dd = dist(m, base); if (dd < nd) { nd = dd; near = m; } });
-  if (near) base = { x:lerp(base.x, near.x, ZONE_TIGHT), y:lerp(base.y, near.y, ZONE_TIGHT) };
+  if (near) base = { x:lerp(base.x, near.x, Z.tight), y:lerp(base.y, near.y, Z.tight) };
   return { x:clamp(base.x, 1, FL - 1), y:clamp(base.y, 1, FW - 1) };
 }
 function updateDefense(side, dt){
-  const arr = teamOf(side), off = otherSide(side), F = M.disc.fl;
-  if (F && !F.pull && F.t > DEF_REACT && F.defChase == null) F.defChase = nearestIdx(arr, F.land);   // now they've seen it
+  const arr = teamOf(side), off = otherSide(side), F = M.disc.fl, Z = ZONE[side];
+  if (F && !F.pull && F.t > Z.react && F.defChase == null) F.defChase = nearestIdx(arr, F.land);   // now they've seen it
   arr.forEach((e, i) => {
-    if (F && !F.pull && F.defChase === i) { moveTo(e, F.land.x, F.land.y, speedOf(e) * CHASE_SPEED, dt); return; }
+    if (F && !F.pull && F.defChase === i) { moveTo(e, F.land.x, F.land.y, speedOf(e) * Z.chase, dt); return; }
     e.lagT -= dt;
     if (e.lagT <= 0) { e.lagT = DEF_LAG; const z = zoneSpot(i, off); e.lx = z.x; e.ly = z.y; }
     moveTo(e, e.lx, e.ly, speedOf(e) * .95, dt);
@@ -2355,7 +2363,7 @@ function tryCatch({ e, side, i, dd }){
   else if (own) {
     const guarded = teamOf(otherSide(side)).some(o => dist(o, e) < 1.5);
     p = (.93 + .006 * e.p.cat) * sp * (far ? .85 : 1) * (high ? .9 : 1) * (guarded ? .93 : 1);
-  } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (teamOf(F.side).some(o => o !== F.thrower && dist(o, d) < 2.2) ? .55 : 1);   // a receiver right there shields it
+  } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (teamOf(F.side).some(o => o !== F.thrower && dist(o, d) < 2.2) ? .55 : 1) * ZONE[side].pick;   // a receiver right there shields it
   e.poseT = .4; if (far) e.dive = .5; else if (high) e.z = .8;
   if (Math.random() >= p) {
     if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).tgt++; turnover({ x:d.x, y:d.y }, otherSide(side), side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }
@@ -2366,12 +2374,12 @@ function tryCatch({ e, side, i, dd }){
   // he has it: he must stop as quickly as he can (a couple of steps, under a yard and a half) and plant a pivot foot
   d.fl = null; d.holder = { side, i }; M.chase = null;
   e.slide = Math.hypot(e.vx || 0, e.vy || 0) > 1 ? { vx:e.vx, vy:e.vy, t:STOP_TIME } : null; e.moving = false; e.vx = e.vy = 0;
-  if (pull) { M.off = side; M.phase = 'live'; M.stall = 0; M.think = rnd(.9, 1.6); afterCatch(side); return; }
+  if (pull) { M.off = side; M.phase = 'live'; M.stall = 0; M.think = rnd(1.1, 2.2); afterCatch(side); return; }
   if (own) {
     M.st[side].cmp++; if (side === 'us') { const b = pbFor(M.pbox, e.p); b.tgt++; b.rec++; }
     if (inGoal(e, side)) { goal(side, e, thrower); return; }
     if (!inField(e)) { d.holder = null; turnover({ x:e.x, y:e.y }, otherSide(side), 'OUT OF BOUNDS'); M.st[side].to++; return; }
-    M.phase = 'live'; M.stall = 0; M.think = rnd(.8, 1.7); afterCatch(side);
+    M.phase = 'live'; M.stall = 0; M.think = rnd(1.1, 2.3); afterCatch(side);
     return;
   }
   // an interception
@@ -2401,6 +2409,8 @@ function turnover(spot, side, text){
   M.off = side; M.phase = 'loose'; M.stall = 0; M.aim = null; M.chase = null;
   M.pick = nearestIdx(teamOf(side), d);
   teamOf(side).forEach((e, i) => { if (i !== M.pick) setCut(e, i, side); });
+  const lost = M.st[otherSide(side)], why = /DROP/.test(text) ? 'drop' : /STALL/.test(text) ? 'stall' : text ? 'miss' : '';
+  if (why) lost[why] = (lost[why] || 0) + 1;
   if (text) banner(text, side === 'us' ? 'Your disc' : 'Their disc', 800);
   hud();
 }
@@ -2441,26 +2451,31 @@ function startPull(receiving){
    to aim perfectly): he misjudges how far to lead the runner (anywhere from AI_LEAD[0] to AI_LEAD[1] of the right
    amount), his aim is off by up to AI_MISS(D) yards on top of his throwing rating, and AI_BAD_READ of the time he
    picks a receiver who isn't the best one. */
-const AI_LEAD = [.4, 1.2], AI_MISS = D => 2.5 + .17 * D, AI_BAD_READ = .15;
+const AI_LEAD = [.3, 1.3], AI_MISS = D => 4.5 + .28 * D, AI_BAD_READ = .22;
+/* He also doesn't see the whole field (user: "they always know the perfect person to pass to"): each time he looks up he
+   only considers AI_LOOKS of his four teammates, picked at random, and AI_FORCE of the time he throws to the best of
+   those even when that man is covered. */
+const AI_LOOKS = 2, AI_FORCE = .3;
 function aiThrow(side, dt){
   const h = M.disc.holder; if (!h || h.side !== side) return;
   M.think -= dt; if (M.think > 0 || teamOf(side)[h.i].slide) return;
   const e = teamOf(side)[h.i], foes = teamOf(otherSide(side)), d = dirOf(side), R = maxRange(e.p);
-  let best = null; const all = [], lf = rnd(AI_LEAD[0], AI_LEAD[1]);
+  let best = null; const all = [], lf = rnd(AI_LEAD[0], AI_LEAD[1]), wild = side === 'us' ? (M.clumsy || 1) : 1;   // M.clumsy: test stand-in for a human's aim
+  const looks = new Set(shuffle([0, 1, 2, 3, 4].filter(i => i !== h.i)).slice(0, M.stall > 6 ? 4 : AI_LOOKS));
   teamOf(side).forEach((m, i) => {
-    if (i === h.i) return;
+    if (!looks.has(i)) return;
     const D0 = dist(e, m), lead = flightTime(D0, e.p.str) * lf;
     const P = { x:clamp(m.x + (m.vx || 0) * lead, 2, FL - 2), y:clamp(m.y + (m.vy || 0) * lead, 2, FW - 2) }, D = dist(e, P);
     if (D < 5 || D > R) return;
     const open = Math.min(...foes.map((f, k) => k === 0 ? 99 : dist(f, P)));   // everyone but the mark
     const gain = (P.x - e.x) * d;
-    const sc = gain * .55 + Math.min(open, 8) * 2.4 - Math.max(0, D - 30) * .35 + rnd(0, 6) + (inGoal(P, side) ? 8 : 0);
+    const sc = gain * .22 + Math.min(open, 8) * 2.4 - Math.max(0, D - 22) * .5 + rnd(0, 6) + (inGoal(P, side) ? 5 : 0);   // cautious: he takes the open man over the big gain, so it takes him more throws to score
     all.push({ sc, P, open, D }); if (!best || sc > best.sc) best = all[all.length - 1];
   });
   if (!best) { M.think = .3; return; }
-  if (best.open < 2.4 && M.stall < 7) { M.think = .3; return; }
-  if (Math.random() < AI_BAD_READ) best = pick(all);                 // the wrong read
-  const off = Math.random() * AI_MISS(best.D), ang = Math.random() * Math.PI * 2;   // and a hand that isn't perfectly steady
+  if (best.open < 2.4 && M.stall < 7 && Math.random() > AI_FORCE) { M.think = rnd(.35, .7); return; }
+  if (Math.random() < AI_BAD_READ * wild) best = pick(all);          // the wrong read
+  const off = Math.random() * AI_MISS(best.D) * wild, ang = Math.random() * Math.PI * 2;   // and a hand that isn't perfectly steady
   throwDisc(side, e, { x:best.P.x + Math.cos(ang) * off, y:best.P.y + Math.sin(ang) * off });
 }
 
@@ -2505,8 +2520,10 @@ function showStats(title, span, cta, onGo){
   const time = sec => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
   const rows = [
     ['Completions', frac(U.cmp, U.att), frac(T.cmp, T.att)],
-    ['Turnovers', U.to, T.to],
-    ['Interceptions', U.d, T.d],
+    ['Dropped', U.drop || 0, T.drop || 0],
+    ['Missed throws', U.miss || 0, T.miss || 0],
+    ['Picked off', T.d, U.d],
+    ['Stalled', U.stall || 0, T.stall || 0],
     ['Possession', time(U.poss), time(T.poss)],
   ];
   const el = $('#stats');
@@ -2543,6 +2560,7 @@ function simRest(){
    the farther you pull the farther it goes (AIM_GAIN screen pixels of throw for each pixel of drag), up to the
    thrower's longest throw. The dotted arc and ring show where you're aiming and how far off it could land.
    There is nothing to do on defense: your team plays its zone on its own. */
+const AIM_HELP_R = 7, AIM_HELP = .5;
 const AIM_GAIN = 3, AIM_MIN = 9;                                      // 3: the longest throw in the game (70 yd) is a drag of about 150 px, most of the way from the thrower to the edge of the screen (it was 5: far too twitchy on a phone)
 function canvasPt(ev){ const r = cv.getBoundingClientRect(); return { x:(ev.clientX - r.left) / r.width * CW, y:(ev.clientY - r.top) / r.height * CH }; }
 function aimTarget(){
@@ -2552,7 +2570,17 @@ function aimTarget(){
   let wx = -dx * AIM_GAIN / PXF, wy = -dy * AIM_GAIN / PYF;           // opposite the drag, in yards
   const D = Math.hypot(wx, wy), R = maxRange(h.p), k = D > R ? R / D : 1;
   wx *= k; wy *= k;
-  return { x:h.x + wx, y:h.y + wy, D:Math.min(D, R), max:D >= R };
+  const T = { x:h.x + wx, y:h.y + wy, D:Math.min(D, R), max:D >= R, to:-1 };
+  // aim help: if the spot you're aiming at is within AIM_HELP_R yards of where a teammate is running to, the throw
+  // bends AIM_HELP of the way to him, and he's marked so you can see who it's for. Aim somewhere empty and it goes there.
+  let bd = AIM_HELP_R;
+  M.our.forEach((m, i) => {
+    if (m === h) return;
+    const lead = flightTime(dist(h, m), h.p.str) * .8, L = { x:m.x + (m.vx || 0) * lead, y:m.y + (m.vy || 0) * lead }, dd = dist(L, T);
+    if (dd < bd) { bd = dd; T.to = i; T.lead = L; }
+  });
+  if (T.to >= 0) { T.x = lerp(T.x, T.lead.x, AIM_HELP); T.y = lerp(T.y, T.lead.y, AIM_HELP); T.D = Math.min(R, dist(h, T)); }
+  return T;
 }
 cv.addEventListener('pointerdown', ev => {
   if (!M || paused) return;
@@ -2581,6 +2609,7 @@ function drawAim(){
     ctx.fillStyle = 'rgba(10,50,20,.35)'; ctx.fillRect(Math.round(sx(x)), Math.round(sy(y)), 2, 1);
     ctx.fillStyle = T.max ? '#ffd23f' : '#ffffff'; ctx.fillRect(Math.round(sx(x)), Math.round(sy(y, z)), 2, 2);
   }
+  if (T.to >= 0) { const m = M.our[T.to], mx = Math.round(sx(m.x)), my = Math.round(sy(m.y)); ctx.fillStyle = '#ffd23f'; ctx.fillRect(mx - 4, my + 1, 9, 1); ctx.fillRect(mx - 4, my - 1, 1, 2); ctx.fillRect(mx + 4, my - 1, 1, 2); }   // the man it's bending toward
   // where it's aimed, and the ring it could land anywhere inside
   const X = Math.round(sx(T.x)), Y = Math.round(sy(T.y)), er = errAt(h.p, T.D);
   ctx.fillStyle = 'rgba(255,255,255,.8)';
