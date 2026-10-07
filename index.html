@@ -570,8 +570,9 @@ function teamR(t){
   return { ...Object.fromEntries(RATE.map(k => [k, a(k)])), stars:Math.round(avg(t.players.map(pStars)) * 2) / 2 };
 }
 
-/* The schedule, 12 games in 14 weeks: every team plays its four division rivals home and away (8 games) and four of the
-   five clubs in its partner division once (East with Central, South with West), two at home and two away. */
+/* The schedule, 12 games in 14 weeks (user): every team plays its four division rivals home and away (8 games), then four
+   clubs from the other divisions once each: one from every other division, and a second from one of them (which
+   division that is changes from season to season). Six home games and six away for everybody. */
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = ri(0, i); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 function confSchedule(league){
   const D = Object.fromEntries(DIVS.map(([c]) => [c, shuffle(league.filter(x => x.conf === c).map(x => x.id))])), rounds = [];
@@ -583,11 +584,14 @@ function confSchedule(league){
     }
     rounds.push(games);
   }
-  for (let r = 0; r < 4; r++) {                                                      // partner division: four rounds
-    const games = [];
-    for (const [x, y] of [['E', 'C'], ['S', 'W']]) for (let i = 0; i < 5; i++) { const a = D[x][i], b = D[y][(i + r) % 5]; games.push(r % 2 ? { h:a, a:b } : { h:b, a:a }); }
-    rounds.push(games);
-  }
+  // the other divisions: three rounds in which each division meets each of the others once, and a fourth that repeats one
+  // pairing with different opponents. The divisions are dealt into the four seats at random, so the extra one moves around.
+  const [A, B, C, E] = shuffle(DIVS.map(([c]) => c)).map(c => D[c]);
+  const cross = (X, Y, shift, xHome) => X.map((a, i) => { const b = Y[(i + shift) % 5]; return xHome ? { h:a, a:b } : { h:b, a:a }; });
+  rounds.push([...cross(A, B, 0, true), ...cross(C, E, 0, true)]);
+  rounds.push([...cross(A, C, 0, false), ...cross(B, E, 0, true)]);
+  rounds.push([...cross(A, E, 0, false), ...cross(B, C, 0, true)]);
+  rounds.push([...cross(A, B, 1, true), ...cross(C, E, 1, false)]);
   return shuffle(rounds);
 }
 // a made-up player at a star level (sal and years set from his asking price)
