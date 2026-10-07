@@ -2145,7 +2145,7 @@ function hud(){
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   $('#pU').className = 'poss' + (play && M.off === 'us' ? ' on' : ''); $('#pO').className = 'poss' + (play && M.off === 'them' ? ' on' : '');
   $('#shc').textContent = M.phase === 'live' ? Math.min(STALL, Math.floor(M.stall) + 1) : '';
-  const hint = !play || M.auto ? '' : M.off === 'us' ? 'Drag back anywhere and let go to throw' : 'Their disc: your defense is on it';
+  const hint = M.auto ? '' : M.phase === 'kick' ? 'Your pull: drag back anywhere and let go to throw off' : !play ? '' : M.off === 'us' ? 'Drag back anywhere and let go to throw' : 'Their disc: your defense is on it';
   if (hint !== M.hint) { M.hint = hint; tip(hint); }
 }
 function banner(text, small, ms = 1000, bigSub = false){
@@ -2426,6 +2426,10 @@ function goal(side, e, thrower){
   M.lastGoal = side; hud();
 }
 /* ---- the pull: the team that just scored (or lost the flip) throws off from its own goal line ---- */
+/* The team's longest thrower takes the pull, and a pull carries PULL_EXTRA yards farther than his longest throw (user):
+   a man who can throw 40 can pull 60. When it's ours, you throw it yourself: phase 'kick' waits with him holding the disc
+   on our goal line until you drag and let go, the same slingshot as any throw. The computer's pulls go at once. */
+const PULL_EXTRA = 20;
 function startPull(receiving){
   const pulling = otherSide(receiving), rd = dirOf(receiving);
   const R = teamOf(receiving), P = teamOf(pulling);
@@ -2433,11 +2437,16 @@ function startPull(receiving){
   [...M.our, ...M.th].forEach(e => { e.slide = null; e.run = 0; e.z = 0; e.dive = 0; e.poseT = 0; e.manual = 0; e.cutWait = 0; e.vx = e.vy = 0; e.moving = false; });
   R.forEach((e, i) => { e.x = ownLine(receiving) + rd * rnd(3, 12); e.y = 5 + i * 7.5 + rnd(-1, 1); e.tx = e.x; e.ty = e.y; e.face = rd; });
   P.forEach((e, i) => { e.x = ownLine(pulling); e.y = 5 + i * 7.5; e.tx = e.x; e.ty = e.y; e.face = -rd; e.lx = e.x; e.ly = e.y; e.lagT = 0; });
-  M.off = receiving; M.aim = null; M.stall = 0;
-  const puller = P[0];
-  M.disc.holder = { side:pulling, i:0 };
-  const T = { x:ownLine(receiving) + rd * rnd(12, 26), y:rnd(10, 30) };
-  throwDisc(pulling, puller, T, { pull:true });
+  M.off = receiving; M.aim = null; M.stall = 0; M.chase = null; M.disc.fl = null;
+  const pi = P.reduce((b, e, i) => maxRange(e.p) > maxRange(P[b].p) ? i : b, 0);   // the longest thrower
+  M.disc.holder = { side:pulling, i:pi };
+  if (pulling === 'us' && !M.auto) { M.phase = 'kick'; hud(); return; }               // yours to throw
+  const far = maxRange(P[pi].p) + PULL_EXTRA, want = { x:ownLine(receiving) + rd * rnd(12, 26), y:rnd(10, 30) }, dd = dist(P[pi], want), k = dd > far ? far / dd : 1;
+  launchPull({ x:P[pi].x + (want.x - P[pi].x) * k, y:P[pi].y + (want.y - P[pi].y) * k });
+}
+function launchPull(T){
+  const h = M.disc.holder, pulling = h.side, receiving = otherSide(pulling), R = teamOf(receiving);
+  throwDisc(pulling, teamOf(pulling)[h.i], T, { pull:true });
   M.off = receiving;
   M.pick = nearestIdx(R, M.disc.fl.target);
   R.forEach((e, i) => { if (i !== M.pick) setCut(e, i, receiving); });
@@ -2488,7 +2497,8 @@ function update(dt){
   if (M.phase === 'score') {
     M.scoreT -= dt;
     if (M.scoreT <= 0) afterGoal();
-  } else if (play) {
+  } else if (M.phase === 'kick') updateDisc(dt);                      // waiting for your pull: the disc sits in his hand
+  else if (play) {
     if (M.phase === 'live') {
       M.stall += dt;
       if (M.stall >= STALL) { const h = holderEnt(); M.st[M.off].to++; turnover({ x:h.x, y:h.y }, otherSide(M.off), 'STALLED'); }
@@ -2567,14 +2577,14 @@ function aimTarget(){
   const dx = A.cx - A.x0, dy = A.cy - A.y0, len = Math.hypot(dx, dy);
   if (len < AIM_MIN) return null;
   let wx = -dx * AIM_GAIN / PXF, wy = -dy * AIM_GAIN / PYF;           // opposite the drag, in yards
-  const D = Math.hypot(wx, wy), R = maxRange(h.p), k = D > R ? R / D : 1;
+  const D = Math.hypot(wx, wy), R = maxRange(h.p) + (M.phase === 'kick' ? PULL_EXTRA : 0), k = D > R ? R / D : 1;
   wx *= k; wy *= k;
   return { x:h.x + wx, y:h.y + wy, D:Math.min(D, R), max:D >= R };   // exactly where you aim: no aim help (the user had it taken out)
 }
 cv.addEventListener('pointerdown', ev => {
   if (!M || paused) return;
   const pt = canvasPt(ev);
-  if (M.off === 'us' && !M.auto && M.phase === 'live' && holderEnt()) {
+  if (!M.auto && holderEnt() && (M.phase === 'kick' || (M.off === 'us' && M.phase === 'live'))) {
     ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch {}
     M.aim = { x0:pt.x, y0:pt.y, cx:pt.x, cy:pt.y, id:ev.pointerId };
   }
@@ -2584,7 +2594,8 @@ const aimUp = ev => {
   if (!M || !M.aim || ev.pointerId !== M.aim.id) return;
   const T = ev.type === 'pointercancel' ? null : aimTarget(), h = holderEnt();
   M.aim = null;
-  if (T && h && !h.slide && M.phase === 'live' && M.off === 'us' && !paused) throwDisc('us', h, T, { user:true });
+  if (T && h && M.phase === 'kick' && !paused) launchPull(T);
+  else if (T && h && !h.slide && M.phase === 'live' && M.off === 'us' && !paused) throwDisc('us', h, T, { user:true });
 };
 cv.addEventListener('pointerup', aimUp); cv.addEventListener('pointercancel', aimUp);
 $('#pauseBtn').addEventListener('click', () => { if (!M) return; paused = true; M.aim = null; speedSheet(true); });
@@ -2592,14 +2603,14 @@ $('#pauseBtn').addEventListener('click', () => { if (!M) return; paused = true; 
 /* ---- draw ---- */
 function drawAim(){
   const T = aimTarget(), h = holderEnt(); if (!T || !h) return;
-  const hh = clamp(T.D * .06 - .3, 0, 4.6), n = Math.max(4, Math.round(T.D / 3.5));
+  const hh = M.phase === 'kick' ? 5 : clamp(T.D * .06 - .3, 0, 4.6), n = Math.max(4, Math.round(T.D / 3.5));
   for (let i = 1; i < n; i++) {                                        // the flight: a dotted arc, and its line along the grass
     const u = i / n, x = lerp(h.x, T.x, u), y = lerp(h.y, T.y, u), z = THROW_Z + 4 * hh * u * (1 - u);
     ctx.fillStyle = 'rgba(10,50,20,.35)'; ctx.fillRect(Math.round(sx(x)), Math.round(sy(y)), 2, 1);
     ctx.fillStyle = T.max ? '#ffd23f' : '#ffffff'; ctx.fillRect(Math.round(sx(x)), Math.round(sy(y, z)), 2, 2);
   }
   // where it's aimed, and the ring it could land anywhere inside
-  const X = Math.round(sx(T.x)), Y = Math.round(sy(T.y)), er = errAt(h.p, T.D);
+  const X = Math.round(sx(T.x)), Y = Math.round(sy(T.y)), er = M.phase === 'kick' ? 6 : errAt(h.p, T.D);   // a pull can drift up to 6 yards
   ctx.fillStyle = 'rgba(255,255,255,.8)';
   for (let a = 0; a < Math.PI * 2; a += Math.PI / 22) ctx.fillRect(Math.round(X + Math.cos(a) * er * PXF), Math.round(Y + Math.sin(a) * er * PYF), 1, 1);
   ctx.fillStyle = '#1b2440'; ctx.fillRect(X - 4, Y - 1, 9, 3); ctx.fillRect(X - 1, Y - 4, 3, 9);
@@ -2637,7 +2648,7 @@ function draw(){
     zoom = lerp(zoom, want, want < zoom ? .14 : .06);                  // out quickly, back in gently
     if (Math.abs(zoom - want) < .002) zoom = want;
     VW = CW / zoom; VH = CH / zoom;
-    const fx = b ? (D.x + b.x) / 2 : D.x + (h ? dirOf(M.off) * 4 : 0), fy = b ? (D.y + b.y) / 2 : D.y;
+    const fx = b ? (D.x + b.x) / 2 : M.phase === 'kick' ? D.x + 16 : D.x + (h ? dirOf(M.off) * 4 : 0), fy = b ? (D.y + b.y) / 2 : D.y;   // before a pull of ours the puller sits at the left, with the field he's throwing into ahead of him
     const tx = VW >= WORLD_W ? (WORLD_W - VW) / 2 : clamp(X0 + fx * PXF - VW / 2, 0, WORLD_W - VW);
     const ty = VH >= CH ? (CH - VH) / 2 : clamp(Y0 + fy * PYF - 10 - VH * .58, 0, CH - VH);   // a little low of center, so the scoreboard covers less of the play
     cam = lerp(cam, tx, .12); camY = lerp(camY, ty, .12);
@@ -2650,7 +2661,7 @@ function draw(){
   if (M.pop > 0) for (let i = 0; i < 5; i++) { const px = Math.floor(Math.random() * VW), py = 3 + Math.floor(Math.random() * Math.max(4, Y0 - 22 - camY)); ctx.fillStyle = '#ffffff'; ctx.fillRect(px, py - 1, 1, 3); ctx.fillRect(px - 1, py, 3, 1); }
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   const ents = [
-    ...M.our.map((e, i) => ({ y:e.y, f:() => drawPlayer(e, M.uni.us, play && !M.auto && M.off === 'us' && h === e ? '#ffd23f' : null) })),
+    ...M.our.map((e, i) => ({ y:e.y, f:() => drawPlayer(e, M.uni.us, !M.auto && h === e && (M.phase === 'kick' || (play && M.off === 'us')) ? '#ffd23f' : null) })),
     ...M.th.map(e => ({ y:e.y, f:() => drawPlayer(e, M.uni.them, null) })),
     { y:-2, f:() => { drawBench('us'); drawBench('them'); } },
     { y:D.y + (h ? .1 : 0), f:drawDisc },
