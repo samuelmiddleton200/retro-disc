@@ -286,7 +286,7 @@ input[type=text]{width:100%;background:var(--navy);border:3px solid var(--white)
 .shootbtn:active{transform:translateY(3px)}
 .shotbox:empty{display:none}
 .shootbtn.dunk{background:#ff5a3c;color:#fff;border-color:#fff}
-.tip{position:absolute;left:50%;transform:translateX(-50%);bottom:4px;font-family:var(--px);font-size:10px;text-align:center;color:#fff;text-shadow:0 2px 0 #000;pointer-events:none;max-width:60%}
+.tip{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(4px + env(safe-area-inset-bottom));font-family:var(--px);font-size:10px;text-align:center;color:#fff;text-shadow:0 2px 0 #000;pointer-events:none;max-width:60%}
 
 /* money outlook (front office) */
 .fac-list{display:grid;gap:10px}.fshort{font-size:13px;color:#cfe0ff}
@@ -1600,7 +1600,7 @@ const courtCv = document.createElement('canvas'); courtCv.width = WORLD_W; court
    screen and the view also slides up and down. It pulls back whenever that's needed to keep a throw's whole distance
    on screen: around the thrower while you aim (see draw), and between the disc and its landing spot while it flies.
    The canvas has SS real pixels per field pixel; SS x ZOOM / 2 is a whole number (4) so sprite pixels stay square. */
-const SS = 6, ZOOM = 4 / 3, ZOOM_OUT = .72, ZOOM_AIM = .34;            // ZOOM_AIM: how far back it can go while you aim (the thrower doesn't move on screen, so a long throw needs more room)
+const SS = 6, ZOOM = 4 / 3, ZOOM_OUT = .72, ZOOM_AIM = .5;            // ZOOM_AIM: how far back it can go while you aim (the thrower doesn't move on screen, so a long throw needs more room)
 let cam = 0, camY = 0, zoom = ZOOM;
 const sx = x => X0 + x * PXF - cam, sy = (y, z = 0) => Y0 + y * PYF - z * PZF - camY;
 const FONT = {
@@ -2445,7 +2445,7 @@ function goal(side, e, thrower){
 /* The team's longest thrower takes the pull, and a pull carries PULL_EXTRA yards farther than his longest throw (user):
    a man who can throw 40 can pull 60. When it's ours, you throw it yourself: phase 'kick' waits with him holding the disc
    on our goal line until you drag and let go, the same slingshot as any throw. The computer's pulls go at once. */
-const PULL_EXTRA = 20;
+const PULL_EXTRA = 20, PULL_GAIN = 6;                                  // PULL_GAIN: a pull needs half the drag of a normal throw (a 70-yard pull is about 77 px), so it fits behind a puller standing near the left of the screen
 function startPull(receiving){
   const pulling = otherSide(receiving), rd = dirOf(receiving);
   const R = teamOf(receiving), P = teamOf(pulling);
@@ -2592,7 +2592,8 @@ function aimTarget(){
   const A = M.aim, h = holderEnt(); if (!A || !h) return null;
   const dx = A.cx - A.x0, dy = A.cy - A.y0, len = Math.hypot(dx, dy);
   if (len < AIM_MIN) return null;
-  let wx = -dx * AIM_GAIN / PXF, wy = -dy * AIM_GAIN / PYF;           // opposite the drag, in yards
+  const gain = M.phase === 'kick' ? PULL_GAIN : AIM_GAIN;
+  let wx = -dx * gain / PXF, wy = -dy * gain / PYF;                   // opposite the drag, in yards
   const D = Math.hypot(wx, wy), R = maxRange(h.p) + (M.phase === 'kick' ? PULL_EXTRA : 0), k = D > R ? R / D : 1;
   wx *= k; wy *= k;
   return { x:h.x + wx, y:h.y + wy, D:Math.min(D, R), max:D >= R };   // exactly where you aim: no aim help (the user had it taken out)
@@ -2664,7 +2665,7 @@ function draw(){
     zoom = lerp(zoom, want, want < zoom ? .14 : .06);                  // out quickly, back in gently
     if (Math.abs(zoom - want) < .002) zoom = want;
     VW = CW / zoom; VH = CH / zoom;
-    const fx = b ? (D.x + b.x) / 2 : M.phase === 'kick' ? D.x + 1 : D.x + (h ? dirOf(M.off) * 4 : 0), fy = b ? (D.y + b.y) / 2 : D.y;   // before a pull of ours the puller sits just left of the middle: room to drag back behind him, field ahead (he was at the very edge, with nowhere to pull back to)
+    const fx = b ? (D.x + b.x) / 2 : M.phase === 'kick' ? D.x + VW * .25 / PXF : D.x + (h ? dirOf(M.off) * 4 : 0), fy = b ? (D.y + b.y) / 2 : D.y;   // before a pull of ours the puller sits a quarter of the way in from the left: room behind him for the (short) pull drag, most of the screen ahead
     const tx = VW >= WORLD_W ? (WORLD_W - VW) / 2 : clamp(X0 + fx * PXF - VW / 2, 0, WORLD_W - VW);
     const ty = VH >= CH ? (CH - VH) / 2 : clamp(Y0 + fy * PYF - 10 - VH * .58, 0, CH - VH);   // a little low of center, so the scoreboard covers less of the play
     cam = lerp(cam, tx, .12); camY = lerp(camY, ty, .12);
