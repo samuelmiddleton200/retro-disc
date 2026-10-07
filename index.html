@@ -713,12 +713,13 @@ function creditPoss(off, def){
   for (let i = 0; i < P.cmp; i++) {
     const t = thrower(off.pl), last = P.goal && i === P.cmp - 1;
     const r = wPick(off.pl.filter(p => p !== t), p => (last ? GOAL_W : CATCH_W)[p.pos] * (.5 + p.cat / 10));
-    const tb = pbFor(off.pb, t); tb.att++; tb.cmp++; pbFor(off.pb, r).rec++;
-    if (last) { tb.ast++; off.box[r.id] = (off.box[r.id] || 0) + 1; }
+    const rb = pbFor(off.pb, r); rb.tgt++; rb.rec++;
+    if (last) { pbFor(off.pb, t).ast++; off.box[r.id] = (off.box[r.id] || 0) + 1; }
   }
-  if (P.to) {
-    const t = thrower(off.pl), tb = pbFor(off.pb, t); tb.att++; tb.to++;
-    if (P.d && def && def.pl.length) pbFor(def.pb, wPick(def.pl, p => p.spd + p.cat)).d++;
+  if (P.to) {                                                        // the throw that didn't connect: meant for someone, and maybe picked off
+    const t = thrower(off.pl);
+    pbFor(off.pb, wPick(off.pl.filter(p => p !== t), p => CATCH_W[p.pos] * (1.5 - p.cat / 10))).tgt++;
+    if (P.d) { pbFor(off.pb, t).to++; if (def && def.pl.length) pbFor(def.pb, wPick(def.pl, p => p.spd + p.cat)).d++; }
   }
 }
 // add one game's box score to each player's season and career lines
@@ -735,14 +736,14 @@ function addStats(players, box, pb){
 function fakeBox(players, score){
   const box = {}, pb = {}, side = { pl:players, box, pb };
   for (let g = 0; g < score; g++) { lastPoss = { cmp:ri(2, 6), to:false, d:false, goal:true }; creditPoss(side, null); }
-  for (let i = ri(5, 10); i > 0; i--) { lastPoss = { cmp:ri(0, 3), to:true, d:false, goal:false }; creditPoss(side, null); }
+  for (let i = ri(4, 8); i > 0; i--) { lastPoss = { cmp:ri(0, 3), to:true, d:Math.random() < .35, goal:false }; creditPoss(side, null); }
   for (let i = ri(1, 4); i > 0; i--) pbFor(pb, wPick(players, p => p.spd + p.cat)).d++;
   addStats(players, box, pb);
 }
-/* Every game is first to 7, 10 or 12 goals (user): no clock. The length is picked before the game and every simulated
+/* Every game is first to 5, 7 or 9 goals (user): no clock. The length is picked before the game and every simulated
    game that week is played to the same number, so the whole league's stats stay comparable with ours.
    A simulated game trades possessions (a goal or a turnover both hand the disc over) until someone gets there. */
-const GAME_TO = [7, 10, 12];
+const GAME_TO = [5, 7, 9];
 const gameTo = () => (G && GAME_TO.includes(G.target) ? G.target : 7);
 function simScore(h, a, hMeter, aMeter, hBox = null, hPb = null, aBox = null, aPb = null){
   const H = teamR(h), A = teamR(a), T = gameTo();
@@ -788,7 +789,10 @@ const perGame = p => p.sal / PAY_GAMES;
 const signBonus = p => Math.round((.25 + (clamp(starsSmooth(p), 1, 5) - 1) * .5625) * 20) / 20;
 const FAN_WIN = 4, FAN_LOSS = -4, FAN_NEW = 1, NEW_GAMES = 3, FAN_MIN = 15;
 const FAN_OFFSEASON = 15;                                            // fans lost between seasons (user, 2026-10-05): interest cools, win them back
-function pbFor(pbox, p){ return pbox[p.id] ||= { ast:0, cmp:0, att:0, rec:0, d:0, to:0 }; }
+/* A player's line (user's definitions): pts = GOALS, catches in the end zone (kept in the box score); ast = his throws
+   caught in the end zone; tgt = throws meant for him and rec = the ones he caught (CMP% = rec / tgt); d = INT, discs he
+   picked off; to = his throws the other team caught. */
+function pbFor(pbox, p){ return pbox[p.id] ||= { ast:0, tgt:0, rec:0, d:0, to:0 }; }
 // credit one simulated possession to our players
 function simCredit(box, pbox){ creditPoss({ pl:rosterArr(), box, pb:pbox }, null); }
 function applyResult(M, us, them, box, pbox = {}){
@@ -1156,9 +1160,8 @@ function rosterHTML(){
 }
 function statLine(o){
   o = o || {};
-  const gp = o.gp || 0, per = k => gp ? ((o[k] || 0) / gp).toFixed(1) : '–';
-  const frac = (m, a) => a ? `${m}/${a} <span class="muted">(${Math.round(m / a * 100)}%)</span>` : '–';
-  return `<td class="num">${gp}</td><td class="num">${per('pts')}</td><td class="num">${per('ast')}</td><td class="num">${frac(o.cmp || 0, o.att || 0)}</td><td class="num">${per('rec')}</td><td class="num">${per('d')}</td><td class="num">${per('to')}</td>`;
+  const n = k => o[k] || 0;
+  return `<td class="num">${n('gp')}</td><td class="num">${n('pts')}</td><td class="num">${n('ast')}</td><td class="num">${n('tgt') ? (n('rec') / n('tgt') * 100).toFixed(1) + '%' : '–'}</td><td class="num">${n('rec')}</td><td class="num">${n('d')}</td><td class="num">${n('to')}</td>`;
 }
 function playerHTML(){
   const p = G.roster[sel]; if (!p) { screen = 'roster'; return rosterHTML(); }
@@ -1175,12 +1178,12 @@ function playerHTML(){
           <span class="px num" style="text-align:right">${p[k]}/10</span>
           <button class="btn sm go" data-train="${k}" ${p[k] >= 10 || G.credits < cost(k) ? 'disabled' : ''}>${p[k] >= 10 ? 'MAX' : `+1 · <span class="num">${cost(k)}</span>CR`}</button></div>
           <div class="muted" style="font-size:12px;margin:-6px 0 8px">${RATE_DESC[k]}</div>`).join('')}
-        <div class="muted" style="font-size:13px">Training starts at <span class="num">2</span> credits a point and doubles for each point in the same stat (<span class="num">2, 4, 8, 16…</span>) (you have <span class="num">${G.credits}</span> CR).${p.gp ? ` ${(p.pts / p.gp).toFixed(1)} goals a game this season.` : ''}</div>
+        <div class="muted" style="font-size:13px">Training starts at <span class="num">2</span> credits a point and doubles for each point in the same stat (<span class="num">2, 4, 8, 16…</span>) (you have <span class="num">${G.credits}</span> CR).${p.gp ? ` ${p.pts} ${p.pts === 1 ? 'goal' : 'goals'} this season.` : ''}</div>
         <div class="panel" style="margin-top:10px;overflow-x:auto;padding:6px 10px">
           <div class="label" style="margin-bottom:2px">Stats</div>
-          <table class="pst"><thead><tr><th></th><th>GP</th><th>GOALS</th><th>AST</th><th>THROWS</th><th>CATCH</th><th>INT</th><th>TO</th></tr></thead>
+          <table class="pst"><thead><tr><th></th><th>GP</th><th>GOALS</th><th>AST</th><th>CMP%</th><th>CATCH</th><th>INT</th><th>TO</th></tr></thead>
           <tbody><tr><td>Season</td>${statLine(p.s)}</tr><tr><td>Career</td>${statLine(p.c)}</tr></tbody></table>
-          <div class="muted" style="font-size:11px;margin-top:3px">Everything but throws is per game.</div>
+          <div class="muted" style="font-size:11px;margin-top:3px">Totals. CMP% is his catches out of the throws meant for him; TO is his throws the other team caught.</div>
         </div>
         <div class="row" style="margin-top:10px"><button class="btn red sm" data-a="release">Release (costs ${money(p.sal * p.yrs * .5)})</button></div>
       </div>
@@ -1216,16 +1219,15 @@ function leagueHTML(){
 // every player on a team this season, ranked by any stat; per-game stats and percentages from p.s
 const LCOLS = [
   { k:'gp', h:'GP', v:o => o.gp || 0, f:v => v },
-  { k:'ppg', h:'GOALS', v:o => o.gp ? (o.pts || 0) / o.gp : null, f:v => v.toFixed(1) },
-  { k:'apg', h:'AST', v:o => o.gp ? (o.ast || 0) / o.gp : null, f:v => v.toFixed(1) },
-  { k:'cmp', h:'CMP%', v:o => o.att ? o.cmp / o.att : null, f:v => (v * 100).toFixed(1) },
-  { k:'rec', h:'CATCH', v:o => o.gp ? (o.rec || 0) / o.gp : null, f:v => v.toFixed(1) },
-  { k:'dpg', h:'INT', v:o => o.gp ? (o.d || 0) / o.gp : null, f:v => v.toFixed(1) },
-  { k:'tov', h:'TO', v:o => o.gp ? (o.to || 0) / o.gp : null, f:v => v.toFixed(1) },
-  { k:'pts', h:'TOTAL', v:o => o.pts || 0, f:v => v },
+  { k:'ppg', h:'GOALS', v:o => o.pts || 0, f:v => v },
+  { k:'apg', h:'AST', v:o => o.ast || 0, f:v => v },
+  { k:'cmp', h:'CMP%', v:o => o.tgt ? o.rec / o.tgt : null, f:v => (v * 100).toFixed(1) },
+  { k:'rec', h:'CATCH', v:o => o.rec || 0, f:v => v },
+  { k:'dpg', h:'INT', v:o => o.d || 0, f:v => v },
+  { k:'tov', h:'TO', v:o => o.gp ? o.to || 0 : null, f:v => v },
 ];
 const lead = { k:'ppg', asc:false, pos:'', team:'' };                // team '*' = one row per team, its players' stats added up
-const LSUM = ['pts', 'ast', 'cmp', 'att', 'rec', 'd', 'to'];
+const LSUM = ['pts', 'ast', 'tgt', 'rec', 'd', 'to'];
 function teamTotals(t){
   const o = { gp:t.w + t.l };
   teamPlayers(t).forEach(p => LSUM.forEach(k => o[k] = (o[k] || 0) + ((p.s || {})[k] || 0)));
@@ -1257,7 +1259,7 @@ function leadersHTML(){
         ${LCOLS.map(c => { const v = c.v(r.o); return `<td class="num ${c.k === col.k ? 'sorted' : ''}">${v === null ? '–' : c.f(v)}</td>`; }).join('')}</tr>`).join('')}
       </tbody></table>
     </div>
-    <div class="muted" style="font-size:12px;margin-top:6px">${rows.length} ${byTeam ? 'teams, each the total of its current players' : 'players'}. Goals, assists, catches, interceptions and turnovers are per game.</div>`;
+    <div class="muted" style="font-size:12px;margin-top:6px">${rows.length} ${byTeam ? 'teams, each the total of its current players' : 'players'}. Season totals. CMP% is catches out of the throws meant for him; TO is his throws the other team caught.</div>`;
 }
 function gateText(){
   const H = homeGate();
@@ -2277,16 +2279,19 @@ function throwDisc(side, e, T, opts = {}){
   const Tf = opts.pull ? 3 + D * .012 : flightTime(D, e.p.str), k = Math.log(1 / ARRIVE) / Tf;
   const h = opts.pull ? 5 : clamp(D * .06 - .3, 0, 4.6), tail = .45 + D * .006;
   M.disc.holder = null;
-  M.disc.fl = { side, thrower:e, from:{ x:e.x, y:e.y }, ux, uy, D, T:Tf, k, h, tail, t:0, v:0, s:0, target:A, intended:T, land:A, pull:!!opts.pull, user:!!opts.user };
+  M.disc.fl = { side, thrower:e, from:{ x:e.x, y:e.y }, ux, uy, D, T:Tf, k, h, tail, t:0, v:0, s:0, target:A, intended:T, land:A, pull:!!opts.pull, user:!!opts.user, meant:-1 };
   [...M.our, ...M.th].forEach(p => { p.tried = false; p.dPrev = 1e9; });
   e.poseT = .28; e.face = ux >= 0 ? 1 : -1;
   // who goes for it: the two teammates nearest where it's coming down, and the nearest defender
   const mates = teamOf(side), foes = teamOf(otherSide(side)), me = mates.indexOf(e);
   const order = mates.map((m, i) => ({ i, d:dist(m, A) })).filter(o => o.i !== me).sort((a, b) => a.d - b.d);
   M.chase = opts.pull ? { off:[], def:-1 } : { off:order.slice(0, 2).map(o => o.i), def:nearestIdx(foes, A) };
+  if (!opts.pull && order.length) M.disc.fl.meant = order[0].i;       // who it's meant for: the teammate nearest where it's coming down
   M.phase = opts.pull ? 'pull' : 'air'; M.stall = 0; M.aim = null;
-  if (!opts.pull) { M.st[side].att++; if (side === 'us') pbFor(M.pbox, e.p).att++; }
+  if (!opts.pull) M.st[side].att++;
 }
+// a throw of ours that nobody on our side caught still counts as one meant for the man it was going to
+function missedTarget(F){ if (F && !F.pull && F.side === 'us' && F.meant >= 0) pbFor(M.pbox, M.our[F.meant].p).tgt++; }
 function updateDisc(dt){
   const d = M.disc, F = d.fl, h = holderEnt();
   if (h) { d.x = h.x + (h.face || 1) * .6; d.y = h.y + .05; d.z = .95; return; }
@@ -2332,7 +2337,7 @@ function tryCatch({ e, side, i, dd }){
   } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (side === 'us' && !M.auto && i === M.ctrl ? 2 : 1);
   e.poseT = .4; if (far) e.dive = .5; else if (high) e.z = .8;
   if (Math.random() >= p) {
-    if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).to++; turnover({ x:d.x, y:d.y }, otherSide(side), side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }
+    if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).tgt++; turnover({ x:d.x, y:d.y }, otherSide(side), side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }
     return;                                                           // a defender who misses just watches it go by
   }
   // caught
@@ -2342,7 +2347,7 @@ function tryCatch({ e, side, i, dd }){
   e.slide = Math.hypot(e.vx || 0, e.vy || 0) > 1 ? { vx:e.vx, vy:e.vy, t:STOP_TIME } : null; e.moving = false; e.vx = e.vy = 0;
   if (pull) { M.off = side; M.phase = 'live'; M.stall = 0; M.think = rnd(.9, 1.6); afterCatch(side); return; }
   if (own) {
-    M.st[side].cmp++; if (side === 'us') { pbFor(M.pbox, thrower.p).cmp++; pbFor(M.pbox, e.p).rec++; }
+    M.st[side].cmp++; if (side === 'us') { const b = pbFor(M.pbox, e.p); b.tgt++; b.rec++; }
     if (inGoal(e, side)) { goal(side, e, thrower); return; }
     if (!inField(e)) { d.holder = null; turnover({ x:e.x, y:e.y }, otherSide(side), 'OUT OF BOUNDS'); M.st[side].to++; return; }
     M.phase = 'live'; M.stall = 0; M.think = rnd(.8, 1.7); afterCatch(side);
@@ -2350,7 +2355,7 @@ function tryCatch({ e, side, i, dd }){
   }
   // an interception
   M.st[thrSide].to++; M.st[side].d++;
-  if (thrSide === 'us') pbFor(M.pbox, thrower.p).to++; else pbFor(M.pbox, e.p).d++;
+  if (thrSide === 'us') { pbFor(M.pbox, thrower.p).to++; missedTarget(F); } else pbFor(M.pbox, e.p).d++;
   M.off = side; M.flash = .4;
   banner(side === 'us' ? 'INTERCEPTED!' : 'PICKED OFF', `${e.p.fn[0]}. ${e.p.ln}`, 1000);
   if (inGoal(e, side)) { goal(side, e, null); return; }               // caught in the end zone he attacks: that's a score
@@ -2365,7 +2370,7 @@ function grounded(){
     const out = !inField(d), spot = out ? { x:F.side === 'us' ? GOAL_R - 20 : GOAL_L + 20, y:FW / 2 } : { x:d.x, y:d.y };
     turnover(spot, otherSide(F.side), ''); return;
   }
-  M.st[F.side].to++; if (F.side === 'us') pbFor(M.pbox, F.thrower.p).to++;
+  M.st[F.side].to++; missedTarget(F);
   turnover({ x:d.x, y:d.y }, otherSide(F.side), inField(d) ? (F.side === 'us' ? 'INCOMPLETE' : 'THEY MISS') : 'OUT OF BOUNDS');
 }
 // the disc is on the ground for `side` at a spot: brought back in bounds, and out of an end zone to the goal line
@@ -2450,7 +2455,7 @@ function update(dt){
   } else if (play) {
     if (M.phase === 'live') {
       M.stall += dt;
-      if (M.stall >= STALL) { const h = holderEnt(); M.st[M.off].to++; if (M.off === 'us') pbFor(M.pbox, h.p).to++; turnover({ x:h.x, y:h.y }, otherSide(M.off), 'STALLED'); }
+      if (M.stall >= STALL) { const h = holderEnt(); M.st[M.off].to++; turnover({ x:h.x, y:h.y }, otherSide(M.off), 'STALLED'); }
       else if (M.off === 'them' || M.auto) aiThrow(M.off, dt);
     }
     if (M && play) { updateOffense(M.off, dt); updateDefense(otherSide(M.off), dt); }
@@ -2459,7 +2464,7 @@ function update(dt){
   if (M) hud();
 }
 /* After a goal: the game ends when someone reaches the target; halftime comes when the first team gets halfway there
-   (4 of 7, 5 of 10, 6 of 12), and the team that pulled to start the game receives to start the second half.
+   (3 of 5, 4 of 7, 5 of 9), and the team that pulled to start the game receives to start the second half.
    Otherwise the team that just scored pulls to the other. */
 function afterGoal(){
   if (M.phase === 'break' || M.phase === 'done') return;
@@ -2516,7 +2521,7 @@ function simRest(){
    the farther you pull the farther it goes (AIM_GAIN screen pixels of throw for each pixel of drag), up to the
    thrower's longest throw. The dotted arc and ring show where you're aiming and how far off it could land.
    Defense: the stick in the bottom left runs your defender; tap one of your players to take him over instead. */
-const AIM_GAIN = 5, AIM_MIN = 7;
+const AIM_GAIN = 3, AIM_MIN = 9;                                      // 3: the longest throw in the game (70 yd) is a drag of about 150 px, most of the way from the thrower to the edge of the screen (it was 5: far too twitchy on a phone)
 function canvasPt(ev){ const r = cv.getBoundingClientRect(); return { x:(ev.clientX - r.left) / r.width * CW, y:(ev.clientY - r.top) / r.height * CH }; }
 function aimTarget(){
   const A = M.aim, h = holderEnt(); if (!A || !h) return null;
