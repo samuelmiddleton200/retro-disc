@@ -2302,7 +2302,7 @@ const STOP_TIME = .32;                                                // seconds
 /* Height counts (user): a disc can only be caught while it is between LOW_Z (0.3) and REACH_Z (2.5) yards off the ground.
    Higher than that it sails over whoever is under it; lower than that it is on its way into the grass. A throw leaves
    and arrives at THROW_Z, chest height, and long ones climb well over that in between. */
-const ARRIVE = .35, LOW_Z = .3, REACH_Z = 2.5, THROW_Z = 1.5, CATCH_R = 2, DEF_R = 1.6, CLEAN_R = 1.2, LIVE_AFTER = 3.5;
+const ARRIVE = .35, LOW_Z = .3, REACH_Z = 2.5, THROW_Z = 1.5, CATCH_R = 1, DEF_R = 1, CLEAN_R = .7, LIVE_AFTER = 3.5;   // CATCH_R / DEF_R: the disc has to pass within a yard of a player for him to get it (user: at 2 yards they were reaching out and grabbing bad throws); past CLEAN_R he lays out for it
 const maxRange = p => 25 + (clamp(p.str, 1, 10) - 1) * 25 / 9;       // longest throw: 25 yards at 1/10 strength up to 50 at 10/10 (user; it was 35 to 70). A pull adds 20: 70 at most, goal line to goal line
 const maxErr = p => 7.5 - (clamp(p.thr, 1, 10) - 1) * .5;            // 7.5 yards at 1/10, half a yard less per point, 3 at 10/10 (user)
 const errAt = (p, D) => maxErr(p) * (.25 + .75 * clamp(D / maxRange(p), 0, 1));
@@ -2363,7 +2363,7 @@ function updateDisc(dt){
      a teammate, open and standing still: 95% at 1/10, 100% at 10/10
    All of those are for a disc floating in at 11 yd/s or slower; a faster one is 4% harder for every yd/s over that
    (the 50-yard throw that goes past a man at 20).
-     a defender: (5% + 1.6% per catching point) within 1.6 yd, same speed rule, 30% less at full stretch or above
+     a defender: (5% + 1.6% per catching point) within a yard, same speed rule, 30% less at full stretch or above
                  his head, and nearly half as likely when the receiver is right there too. Anything he gets is an
                  interception. */
 const CONTEST_R = 2;
