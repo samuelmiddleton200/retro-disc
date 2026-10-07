@@ -185,7 +185,7 @@ td{padding:5px 4px;text-align:right;border-top:2px solid rgba(255,255,255,.15)}
 th:first-child,td:first-child{text-align:left}
 tr.me td{color:var(--yellow)}
 tr.cut td{border-top:2px dashed var(--yellow)}
-.brk{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px;height:min(68vh,430px);padding:6px 8px}
+.brk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;height:min(68vh,430px);padding:6px 8px}
 .bcol{display:flex;flex-direction:column;min-width:0}
 .bh{font-family:var(--px);font-size:9px;color:#cfe0ff;text-align:center;white-space:nowrap;margin-bottom:3px}
 .bms{flex:1;display:flex;flex-direction:column;justify-content:space-around;gap:3px;min-height:0}
@@ -196,6 +196,7 @@ tr.cut td{border-top:2px dashed var(--yellow)}
 .bm .w{font-weight:700}.bm .l{opacity:.4}.bm .me{color:var(--yellow)}.bm .tbd{opacity:.4}
 .bfin .bm{border-color:var(--yellow)}
 .bchamp{text-align:center;font-family:var(--px);font-size:11px}
+.bcap{font-family:var(--px);font-size:8px;color:#cfe0ff;text-align:center;margin-bottom:2px}
 
 .sheet-bg{position:fixed;inset:0;background:rgba(5,10,30,.6);z-index:40}
 .sheet{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:41;width:min(460px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;border:3px solid var(--white);border-radius:8px;background:var(--blue-d);padding:14px;box-shadow:0 6px 0 var(--navy)}
@@ -221,7 +222,7 @@ input[type=text]{width:100%;background:var(--navy);border:3px solid var(--white)
 .sb .poss.on{background:var(--yellow);clip-path:polygon(0 50%,100% 0,100% 100%)}
 .sb .tm.r .poss.on{clip-path:polygon(0 0,100% 50%,0 100%)}
 .sb .mid{display:grid;place-items:center;align-content:center;padding:2px 12px;border-inline:3px solid #fff;min-width:78px;background:#0b1433;line-height:1.05}
-.sb .q{font-size:11px;color:var(--yellow)}
+.sb .q{font-size:9px;color:var(--yellow);letter-spacing:1px;white-space:nowrap}
 .sb .rd{font-size:8px;color:#fff;letter-spacing:1px;white-space:nowrap}.sb .rd[hidden]{display:none}
 .champ{position:relative;display:grid;justify-items:center;align-content:center;gap:8px;text-align:center;min-height:min(72vh,440px);overflow:hidden}
 .champ .cup{font-size:76px;line-height:1;filter:drop-shadow(0 5px 0 rgba(0,0,0,.4));animation:cupin .7s cubic-bezier(.2,1.5,.4,1) both}
@@ -398,7 +399,7 @@ input[type=text]{width:100%;background:var(--navy);border:3px solid var(--white)
     <canvas id="court" width="640" height="360"></canvas>
     <div class="hud"><div class="sb">
       <div class="tm" id="tmU"><span class="ab" id="aU"></span><span class="sc num" id="sU">0</span><span class="poss" id="pU"></span></div>
-      <div class="mid"><span class="rd" id="rdn" hidden></span><span class="q" id="qq">1ST</span><span class="clk num" id="qc">15:00</span></div>
+      <div class="mid"><span class="rd" id="rdn" hidden></span><span class="q" id="qq">FIRST TO</span><span class="clk num" id="qc">7</span></div>
       <div class="tm r" id="tmO"><span class="poss" id="pO"></span><span class="sc num" id="sO">0</span><span class="ab" id="aO"></span></div>
     </div><div class="shotbox num" id="shc">24</div></div>
     <button class="btn sm gbtn" id="pauseBtn" aria-label="Pause">II</button>
@@ -453,34 +454,30 @@ function giveLook(p){
 const COLORS = [['#d9453b','#1f2a44'],['#2f6fe0','#ffd23f'],['#2f9e5b','#ffd23f'],['#7a4bd1','#ffd23f'],['#f08a24','#1b2233'],['#1f2a44','#e0584b'],['#12a3a3','#1f2a44'],['#b0304f','#ffd23f']];
 const SECONDARY = Object.fromEntries(COLORS);
 const AI_TEAMS = [['Portside','Pilots'],['Ridgeview','Rams'],['Lakeshore','Lynx'],['Mesa','Vipers'],['Northgate','Wolves'],['Bayview','Herons'],['Summit','Peaks'],['Ironwood','Bears'],['Coral Coast','Sharks'],['Pine Hollow','Owls'],['Redstone','Miners']];
-/* Seven on the field, one roster spot each:
-     HN handler, RS reset, SW swing   the three who stay near the disc and do most of the throwing
-     MD mid, WG wing                  cut underneath for the short and middle throws
-     ST striker, DP deep              go long and finish in the end zone */
-const POS = ['HN','RS','SW','MD','WG','ST','DP'];
-const POS_NAME = { HN:'Handler', RS:'Reset', SW:'Swing', MD:'Mid', WG:'Wing', ST:'Striker', DP:'Deep' };
-// 30 clubs in two conferences of 15: [id, city, name, conference, main color, second color]
+/* Five on the field (user), one roster spot each:
+     HN handler, RS reset    the two who stay near the disc and do most of the throwing
+     MD mid, WG wing         cut underneath for the short and middle throws
+     DP deep                 goes long and finishes in the end zone */
+const POS = ['HN','RS','MD','WG','DP'];
+const POS_NAME = { HN:'Handler', RS:'Reset', MD:'Mid', WG:'Wing', DP:'Deep' };
+// The league (user's list): 20 clubs in four divisions of five. [id, city, name, division, main color, second color]
+const DIVS = [['E', 'East'], ['C', 'Central'], ['S', 'South'], ['W', 'West']];
+const DIV_NAME = Object.fromEntries(DIVS);
 const TEAMS = [
-  ['PHI','Philadelphia','Liberty','E','#006BB6','#ED174C'], ['OKC','Oklahoma City','Twisters','W','#007AC1','#EF3B24'], ['NYK','New York','Skyline','E','#006BB6','#F58426'],
-  ['IND','Indiana','Racers','E','#002D62','#FDBB30'], ['DEN','Denver','Altitude','W','#0E2240','#FEC524'], ['SAS','San Antonio','Bats','W','#000000','#C4CED4'],
-  ['CLE','Cleveland','Current','E','#860038','#FDBB30'], ['ATL','Atlanta','Flyers','E','#E03A3E','#FDB927'], ['HOU','Houston','Comets','W','#CE1141','#000000'],
-  ['TOR','Toronto','North','E','#CE1141','#000000'], ['BOS','Boston','Harbor','E','#007A33','#BA9653'], ['MIN','Minnesota','Frost','W','#0C2340','#78BE20'],
-  ['DET','Detroit','Motors','E','#C8102E','#1D42BA'], ['MIA','Miami','Tide','E','#98002E','#000000'], ['UTA','Utah','Peaks','W','#002B5C','#F9A01B'],
-  ['LAL','Los Angeles','Stars','W','#552583','#FDB927'], ['POR','Portland','Pines','W','#E03A3E','#000000'], ['ORL','Orlando','Orbit','E','#0077C0','#C4CED4'],
-  ['GSW','Golden State','Fog','W','#1D428A','#FFC72C'], ['PHX','Phoenix','Scorch','W','#1D1160','#E56020'], ['NOP','New Orleans','Krewe','W','#0C2340','#85714D'],
-  ['WAS','Washington','Monuments','E','#002B5C','#E31837'], ['DAL','Dallas','Stampede','W','#00538C','#B8C4CA'], ['LAC','LA','Waves','W','#C8102E','#1D428A'],
-  ['CHA','Charlotte','Kites','E','#1D1160','#00788C'], ['CHI','Chicago','Gusts','E','#CE1141','#000000'], ['MEM','Memphis','Rhythm','W','#5D76A9','#12173F'],
-  ['SAC','Sacramento','Gold','W','#5A2D81','#63727A'], ['BKN','Brooklyn','Bridges','E','#000000','#777D84'], ['MIL','Milwaukee','Brew','E','#00471B','#EEE1C6'],
-].map(([abbr, city, name, conf, c1, c2]) => ({ abbr, city, name, conf, c1, c2 }));
+  ['ATL','Atlanta','Hustle','S','#4B2E83','#F2C230'], ['ATX','Austin','Sol','S','#F26A21','#1B2A49'], ['CAR','Carolina','Flyers','S','#2E86DE','#F2C230'], ['HOU','Houston','Havoc','S','#D9480F','#000000'], ['DC','DC','Breeze','S','#0B2545','#D7263D'],
+  ['CHI','Chicago','Union','C','#5AA9E6','#C8102E'], ['IND','Indianapolis','AlleyCats','C','#0E7A3B','#000000'], ['MAD','Madison','Radicals','C','#E0A800','#000000'], ['MIN','Minnesota','Wind Chill','C','#0C2340','#7FC6E8'], ['PIT','Pittsburgh','Thunderbirds','C','#1B1B1B','#FFB81C'],
+  ['BOS','Boston','Glory','E','#0B1F3A','#C8102E'], ['MTL','Montreal','Royal','E','#1D3FA5','#F2F2F4'], ['NY','New York','Empire','E','#151515','#2ECC71'], ['PHI','Philadelphia','Phoenix','E','#C8102E','#000000'], ['TOR','Toronto','Rush','E','#B00020','#F2F2F4'],
+  ['OAK','Oakland','Spiders','W','#1A1A1A','#F7D417'], ['SLC','Salt Lake','Shred','W','#1E7F8C','#F2C230'], ['SD','San Diego','Growlers','W','#0A3D62','#F5A623'], ['SEA','Seattle','Cascades','W','#1B4D3E','#8FD3F4'], ['LV','Vegas','Bighorn','W','#5B2A86','#D4AF37'],
+].map(([abbr, city, name, conf, c1, c2]) => ({ abbr, city, name, conf, c1, c2 }));   // "conf" holds the division letter
 // five ratings, 1-10 (user spec): speed, stamina, throwing (accuracy), catching, strength (how far and how fast he throws)
 const RATE = ['spd','sta','thr','cat','str'];
 const RATE_NAME = { spd:'Speed', sta:'Stamina', thr:'Throwing', cat:'Catching', str:'Strength' };
-const RATE_DESC = { spd:'70 yards in 12 seconds at 1, in 10 seconds at 10.', sta:'Slows down less the more he runs in a point.', thr:'Accuracy: a throw can miss by up to 20 yards at 1, 5 at 10.', cat:'Holds on to faster and harder throws, and picks off more.', str:'Longest throw: 35 yards at 1, 70 at 10. Faster throws too.' };
+const RATE_DESC = { spd:'70 yards in 12 seconds at 1, in 10 seconds at 10.', sta:'Slows down less the more he runs in a point.', thr:'Accuracy: a throw can miss by up to 10 yards at 1, 3 at 10.', cat:'Holds on to faster and harder throws, and picks off more.', str:'Longest throw: 35 yards at 1, 70 at 10. Faster throws too.' };
 const TILT = {
-  HN:{ spd:-1.5, sta:-.5, thr:2, cat:-.5, str:.5 }, RS:{ spd:-.5, sta:0, thr:1.5, cat:0, str:-1 }, SW:{ spd:0, sta:0, thr:1, cat:0, str:-1 },
-  MD:{ spd:.5, sta:1, thr:-.5, cat:.5, str:-1.5 }, WG:{ spd:1, sta:.5, thr:-1, cat:.5, str:-1 }, ST:{ spd:1.5, sta:-.5, thr:-1.5, cat:1.5, str:-1 }, DP:{ spd:2, sta:-1, thr:-2, cat:1.5, str:-.5 },
+  HN:{ spd:-1.5, sta:-.5, thr:2, cat:-.5, str:.5 }, RS:{ spd:-.5, sta:0, thr:1.5, cat:0, str:-1 },
+  MD:{ spd:.5, sta:1, thr:-.5, cat:.5, str:-1.5 }, WG:{ spd:1, sta:.5, thr:-1, cat:.5, str:-1 }, DP:{ spd:2, sta:-1, thr:-2, cat:1.5, str:-.5 },
 };
-const SEASON_GAMES = 14;
+const SEASON_GAMES = 12;
 // TV money per game (amounts in millions). Star power for each player on the roster: 1-1.5 stars $10K, 2-2.5 $25K,
 // 3-3.5 $50K, 4-4.5 $100K, 5 stars $250K.
 //   HOME: local TV $30K per 1% of fans + star power         (fans watch their team at home)
@@ -580,44 +577,46 @@ function teamR(t){
   return { ...Object.fromEntries(RATE.map(k => [k, a(k)])), stars:Math.round(avg(t.players.map(pStars)) * 2) / 2 };
 }
 
-// Every team plays each team in its own conference once (15 teams, so one team sits out each round)
-function confSchedule(league){
-  const rounds = Array.from({ length:15 }, () => []);
-  for (const conf of ['E', 'W']) {
-    const t = league.filter(x => x.conf === conf).map(x => x.id).sort(() => Math.random() - .5);
-    t.push(null);                                                          // the bye slot
-    const n = t.length;
-    for (let r = 0; r < n - 1; r++) {
-      for (let i = 0; i < n / 2; i++) {
-        const a = t[i], b = t[n - 1 - i];
-        if (a && b) rounds[r].push(r % 2 ? { h:a, a:b } : { h:b, a:a });
-      }
-      t.splice(1, 0, t.pop());
-    }
-  }
-  return rounds;
-}
+/* The schedule, 12 games in 14 weeks: every team plays its four division rivals home and away (8 games) and four of the
+   five clubs in its partner division once (East with Central, South with West), two at home and two away. */
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = ri(0, i); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+function confSchedule(league){
+  const D = Object.fromEntries(DIVS.map(([c]) => [c, shuffle(league.filter(x => x.conf === c).map(x => x.id))])), rounds = [];
+  for (let pass = 0; pass < 2; pass++) for (let r = 0; r < 5; r++) {               // division games: five rounds a pass, one club off each round
+    const games = [];
+    for (const [c] of DIVS) {
+      const rest = [...D[c].slice(1), null], arr = [D[c][0], ...rest.slice(r), ...rest.slice(0, r)];
+      for (let i = 0; i < 3; i++) { const a = arr[i], b = arr[5 - i]; if (a && b) games.push((pass + i) % 2 ? { h:a, a:b } : { h:b, a:a }); }
+    }
+    rounds.push(games);
+  }
+  for (let r = 0; r < 4; r++) {                                                      // partner division: four rounds
+    const games = [];
+    for (const [x, y] of [['E', 'C'], ['S', 'W']]) for (let i = 0; i < 5; i++) { const a = D[x][i], b = D[y][(i + r) % 5]; games.push(r % 2 ? { h:a, a:b } : { h:b, a:a }); }
+    rounds.push(games);
+  }
+  return shuffle(rounds);
+}
 // a made-up player at a star level (sal and years set from his asking price)
 function starPlayer(pos, stars, age = ri(21, 32)){ const p = makePlayer(pos, starsTarget(clamp(stars, .5, 5)) + rnd(-.2, .2), age); p.sal = askSalary(p); p.yrs = askYears(p); return p; }
 function newGame(pickAbbr){
   const league = TEAMS.map(T => ({ id:T.abbr, city:T.city, name:T.name, abbr:T.abbr, conf:T.conf, c1:T.c1, c2:T.c2, w:0, l:0, pf:0, pa:0, players:[] }));
   const mine = league.find(t => t.id === pickAbbr);
   mine.id = 'U'; mine.user = true;
-  // every other club gets seven players around its own level, from strugglers (1.5 stars) to contenders (4.3)
+  // every other club gets five players around its own level, from strugglers (1.5 stars) to contenders (4.3)
   for (const t of league) { if (t.user) continue; const lv = rnd(1.5, 4.3); t.players = POS.map(pos => starPlayer(pos, Math.round((lv + rnd(-1, 1)) * 2) / 2)); }
   const roster = {};
   for (const pos of POS) {
     const p = makePlayer(pos, starsTarget(1) + rnd(-.2, .2), ri(21, 30)); p.sal = 1; p.yrs = ri(1, 2); roster[pos] = p;
-    while (Math.round(pAvg(p) * 4) > 8) { const k = RATE.reduce((a, b) => p[a] >= p[b] ? a : b); p[k]--; }   // your seven start at 1 star
+    while (Math.round(pAvg(p) * 4) > 8) { const k = RATE.reduce((a, b) => p[a] >= p[b] ? a : b); p[k]--; }   // your five start at 1 star
   }
   const used = new Set(); for (const pos of POS) { const p = roster[pos]; while (used.has(p.num)) p.num = ri(0, 55); used.add(p.num); }
-  G = { v:2, season:1, week:0, phase:'regular', cash:2, credits:4, fans:25, boosts:[], gpSeason:0, cap:CAP_START, ticket:TICKET_FAIR, speed:10,
+  G = { v:2, season:1, week:0, phase:'regular', cash:2, credits:4, fans:25, boosts:[], gpSeason:0, cap:CAP_START, ticket:TICKET_FAIR, target:7,
     fac:{ arena:1, amenities:1, marketing:1, recruiting:1 }, roster, league, schedule:confSchedule(league), results:[],
     fa:[], pool:[], history:[], playoffs:null, off:null, last:null, kit:{ j:'home', s:'home' }, fin:{ gate:0, tv:0, bonus:0, spend:0, salaries:0 } };
   refillFA(FA_SIZE);
 }
-const FA_SIZE = 35;
+const FA_SIZE = 30;
 // keep free agency stocked: at least three at every position, from 1.5 stars up to the odd 5-star
 function refillFA(n){
   for (const pos of POS) while (G.fa.filter(p => p.pos === pos).length < 3) addFA(pos);
@@ -655,8 +654,8 @@ function uniqueNum(p){
 }
 /* ---- save slots: 3 separate games. Each lives in this device's storage (and in the artifact's database when
    there is one). The old single save becomes slot 1. ---- */
-const CACHE = 'retrodisc.save.v1', SLOTS = 3;
-const slotKey = n => `retrodisc.slot${n}`;
+const CACHE = 'retrodisc5.save.v1', SLOTS = 3;
+const slotKey = n => `retrodisc5.slot${n}`;   // "5": the five-a-side rosters (the first day's seven-a-side saves don't carry over)
 let SLOT = null, slotRemote = {};                                      // slotRemote: slots found in the database
 let DB = null, saveT = null, chain = Promise.resolve();
 function slotRaw(n){ let raw = null; try { raw = localStorage.getItem(slotKey(n)); } catch {} return raw || slotRemote[n] || null; }
@@ -740,20 +739,18 @@ function fakeBox(players, score){
   for (let i = ri(1, 4); i > 0; i--) pbFor(pb, wPick(players, p => p.spd + p.cat)).d++;
   addStats(players, box, pb);
 }
-/* Game speed sets how long a game is: at 5x a played game has twice the possessions of 10x, at 15x two thirds. The
-   speed is picked before the game and every simulated game that week uses the same one, so the whole league's
-   stats stay comparable with ours whatever speed we play at. */
-const SIM_POSS_10X = 14;                                              // possessions per team in a simulated game at 10x
-const simPoss = () => Math.max(5, Math.round(SIM_POSS_10X * 10 / ((G && G.speed) || 10)));
+/* Every game is first to 7, 10 or 12 goals (user): no clock. The length is picked before the game and every simulated
+   game that week is played to the same number, so the whole league's stats stay comparable with ours.
+   A simulated game trades possessions (a goal or a turnover both hand the disc over) until someone gets there. */
+const GAME_TO = [7, 10, 12];
+const gameTo = () => (G && GAME_TO.includes(G.target) ? G.target : 7);
 function simScore(h, a, hMeter, aMeter, hBox = null, hPb = null, aBox = null, aPb = null){
-  const H = teamR(h), A = teamR(a);
+  const H = teamR(h), A = teamR(a), T = gameTo();
   const side = (t, box, pb) => ({ t, pl:teamPlayers(t), box:box || {}, pb:pb || {} });
   const hS = side(h, hBox, hPb), aS = side(a, aBox, aPb);
   const go = (o, d, O, D) => { const pts = simPossession(O, D); creditPoss(o, d); return pts; };
-  let hs = 0, as = 0;
-  const n = simPoss();
-  for (let i = 0; i < n; i++) { hs += go(hS, aS, H, A); as += go(aS, hS, A, H); }
-  while (hs === as) { hs += go(hS, aS, H, A); as += go(aS, hS, A, H); }
+  let hs = 0, as = 0, home = Math.random() < .5;
+  while (hs < T && as < T) { if (home) hs += go(hS, aS, H, A); else as += go(aS, hS, A, H); home = !home; }
   // computer teams book their own stats; yours go through applyResult
   for (const S of [hS, aS]) if (!S.t.user) addStats(S.pl, S.box, S.pb);
   return [hs, as];
@@ -762,8 +759,8 @@ function record(h, a, hs, as){ h.pf += hs; h.pa += as; a.pf += as; a.pa += hs; i
 const byRecord = (x, y) => (y.w - y.l) - (x.w - x.l) || (y.pf - y.pa) - (x.pf - x.pa);
 const standings = () => [...G.league].sort(byRecord);
 const confStandings = conf => G.league.filter(t => t.conf === conf).sort(byRecord);
-const ROUND_SHORT = { 'Play-in':'PLAY-IN', 'First round':'ROUND 1', 'Conference semifinal':'SEMIS', 'Conference final':'CONF FINAL', 'The Finals':'FINALS' };
-const ROUND_NAME = ['Play-in', 'First round', 'Conference semifinal', 'Conference final', 'The Finals'];
+const ROUND_SHORT = { 'Division semifinal':'DIV SEMI', 'Division final':'DIV FINAL', 'Semifinal':'SEMIFINAL', 'The Final':'FINAL' };
+const ROUND_NAME = ['Division semifinal', 'Division final', 'Semifinal', 'The Final'];
 
 /* ============================ after a game ============================ */
 // Home games: fans fill the arena; every $100 over a $150 ticket keeps about 14% of seats empty.
@@ -776,15 +773,15 @@ function homeGate(){
   return { att, crowd, tickets, food, parking, total:tickets + food + parking };
 }
 // salary cap: $20M to start, +$10M per 25 credits, up to $70M
-const CAP_START = 28, CAP_MAX = 98, CAP_STEP = 14, CAP_COST = 25;   // seven salaries, so 1.4x the five-man numbers
+const CAP_START = 20, CAP_MAX = 70, CAP_STEP = 10, CAP_COST = 25;
 const capNow = () => G.cap || CAP_START;
 // training a stat doubles each time: 2, 4, 8, 16, 32 CR... (p.tr counts points trained per stat), so one bad player
 // can't cheaply be turned into an elite shooter
 const trainCost = (p, k) => 2 * Math.pow(2, (p.tr || {})[k] || 0);
 // credits per game: 2 under 20% fans, then +1 for every 20% (20-40% is 3, ... 80-100% is 6)
 const gameCredits = () => 2 + Math.floor(Math.min(G.fans, 99.9) / 20);
-// every game each player is paid 1/17 of his yearly salary (14 regular-season games + about 3 playoff games; a play-in team that goes all the way plays 5)
-const PAY_GAMES = 17;
+// every game each player is paid 1/16 of his yearly salary (12 regular-season games and up to 4 in the playoffs)
+const PAY_GAMES = 16;
 const perGame = p => p.sal / PAY_GAMES;
 // to sign someone you need the cash to pay him for the rest of this season
 // free agents want a signing bonus in cash up front: $250K at 1 star up to $2.5M at 5 stars, to the nearest $50K
@@ -836,16 +833,18 @@ function finishWeek(){
 }
 
 /* ============================ playoffs + offseason ============================ */
-/* Playoffs (same format as Retro Basket), every tie a single game. The top 10 in each conference get in:
-     round 0  play-in: 9 v 10 (the winner plays the 1 seed) and 7 v 8 (the winner plays the 2 seed)
-     round 1  first round: 1 v 9/10, 4 v 5, 3 v 6, 2 v 7/8      round 2  conference semis
-     round 3  conference finals                                round 4  the Finals
-   P.games is the round being played (East first, then West), P.hist[round] = [home, away, winner] for the rounds done. */
-const PO_LAST = 4;
+/* Playoffs: the top three in each division get in, every tie a single game.
+     round 0  division semifinal: 2 v 3 (the division winner sits this one out)
+     round 1  division final: 1 v that winner
+     round 2  semifinals: East v Central and South v West
+     round 3  the final
+   P.games is the round being played (East, Central, South, West order), P.hist[round] = [home, away, winner] for the rounds done. */
+const PO_LAST = 3;
+const poSeeds = () => DIVS.map(([c]) => confStandings(c).slice(0, 3).map(t => t.id));
 function startPlayoffs(){
-  const E = confStandings('E').slice(0, 10).map(t => t.id), W = confStandings('W').slice(0, 10).map(t => t.id);
+  const div = poSeeds();
   G.phase = 'playoffs';
-  G.playoffs = { v:2, round:0, E, W, seeds:[...E, ...W], games:[[E[8], E[9]], [E[6], E[7]], [W[8], W[9]], [W[6], W[7]]], hist:[], out:[], champ:null, reached:-1, userOut:false };
+  G.playoffs = { v:3, round:0, div, seeds:div.flat(), games:div.map(d => [d[1], d[2]]), hist:[], out:[], champ:null, reached:-1, userOut:false };
   G.playoffs.userOut = !G.playoffs.seeds.includes('U');
   playoffByes();
 }
@@ -854,7 +853,7 @@ function nextPlayoffGame(){
   if (P.round > PO_LAST || P.userOut) return null;
   return P.games.find(m => m.includes('U')) || null;
 }
-// a round we're alive in but don't play: seeds 1-6 sit out the play-in
+// a round we're alive in but don't play: a division winner sits out the division semifinal
 function playoffByes(){
   const P = G.playoffs;
   while (G.phase === 'playoffs' && !P.userOut && !P.games.some(m => m.includes('U'))) playoffRound(null);
@@ -876,9 +875,9 @@ function playoffRound(userWinner){
     }
     startOffseason(); return;
   }
-  if (P.round === 0) P.games = ['E', 'W'].flatMap((c, i) => { const S = P[c]; return [[S[0], w[i * 2]], [S[3], S[4]], [S[2], S[5]], [S[1], w[i * 2 + 1]]]; });
+  if (P.round === 0) P.games = P.div.map((d, i) => [d[0], w[i]]);
   else P.games = w.flatMap((x, i) => i % 2 ? [] : [[x, w[i + 1]]]);
-  if (P.round === PO_LAST - 1) P.games[0].sort((x, y) => byRecord(teamById(x), teamById(y)));   // the better record hosts the Finals
+  if (P.round >= 1) P.games.forEach(g => g.sort((x, y) => byRecord(teamById(x), teamById(y))));   // from the semifinals on, the better record hosts
   P.userOut = P.out.includes('U');
   P.round++;
 }
@@ -889,46 +888,44 @@ function resolvePlayoffs(userWinner){
 function finishText(){
   const P = G.playoffs;
   if (P.champ === 'U') return 'Champions';
-  if (P.reached === 4) return 'Lost in the Finals';
-  if (P.reached === 3) return 'Lost in the conference final';
-  if (P.reached === 2) return 'Lost in the conference semis';
-  if (P.reached === 1) return 'Lost in the first round';
-  if (P.reached === 0) return 'Lost in the play-in';
+  if (P.reached === 3) return 'Lost in the final';
+  if (P.reached === 2) return 'Lost in the semifinal';
+  if (P.reached === 1) return 'Lost in the division final';
+  if (P.reached === 0) return 'Lost in the division semifinal';
   return 'Missed the playoffs';
 }
-/* The bracket, East on the left and West on the right, the Finals in the middle. During the regular season it is
-   the bracket as the standings have it today; in the playoffs (and after them) it is the real one with results. */
-const PO_N = [2, 4, 2, 1];                                            // games per conference in rounds 0-3
+/* The bracket: East and Central on the left, South and West on the right, the final in the middle. During the regular
+   season it is the bracket as the standings have it today; in the playoffs (and after them) it is the real one. */
+const PO_N = [2, 2, 1];                                               // games on each side in rounds 0-2
 function bracketNow(){
   const P = G.playoffs;
-  if (P && P.v === 2) return P;
-  const E = confStandings('E').slice(0, 10).map(t => t.id), W = confStandings('W').slice(0, 10).map(t => t.id);
-  return { round:0, E, W, games:[[E[8], E[9]], [E[6], E[7]], [W[8], W[9]], [W[6], W[7]]], hist:[], champ:null, projected:true };
+  if (P && P.v === 3) return P;
+  const div = poSeeds();
+  return { round:0, div, games:div.map(d => [d[1], d[2]]), hist:[], champ:null, projected:true };
 }
-// the games of one round for one conference (ci 0 = East, 1 = West): [home, away, winner]; null = not known yet
-function bracketGames(P, ci, r){
-  const n = PO_N[r], S = ci ? P.W : P.E;
-  if (r < P.round && P.hist[r]) return P.hist[r].slice(ci * n, ci * n + n);
-  if (r === P.round) return P.games.slice(ci * n, ci * n + n).map(([h, a]) => [h, a, null]);
-  if (r === 1) return [[S[0], null, null], [S[3], S[4], null], [S[2], S[5], null], [S[1], null, null]];
+// the games of one round on one side (si 0 = East + Central, 1 = South + West): [home, away, winner]; null = not known yet
+function bracketGames(P, si, r){
+  const n = PO_N[r];
+  if (r < P.round && P.hist[r]) return P.hist[r].slice(si * n, si * n + n);
+  if (r === P.round) return P.games.slice(si * n, si * n + n).map(([h, a]) => [h, a, null]);
+  if (r === 1) return [0, 1].map(k => [P.div[si * 2 + k][0], null, null]);
   return Array.from({ length:n }, () => [null, null, null]);
 }
 function bracketHTML(){
   const P = bracketNow();
-  const seed = id => (P.E.indexOf(id) + 1) || (P.W.indexOf(id) + 1);
+  const seed = id => { for (const d of P.div) { const i = d.indexOf(id); if (i >= 0) return i + 1; } return ''; };
   const line = (id, w, tbd) => id === null || id === undefined ? `<div class="tbd"><span class="sd"></span><span>${tbd}</span></div>`
     : `<div class="${w ? (w === id ? 'w' : 'l') : ''} ${id === 'U' ? 'me' : ''}"><span class="sd num">${seed(id)}</span><span>${esc(teamById(id).abbr)}</span></div>`;
-  const game = ([h, a, w], tbd = '–') => `<div class="bm">${line(h, w, tbd)}${line(a, w, tbd)}</div>`;
-  const col = (label, games, tbd, cls = '') => `<div class="bcol ${cls}"><div class="bh">${label}</div><div class="bms">${games.map(g => game(g, tbd)).join('')}</div></div>`;
-  // the play-in games sit level with the first-round game their winner goes into: 9 v 10 by the 1 seed, 7 v 8 by the 2 seed
-  const side = ci => [col('Play-in', bracketGames(P, ci, 0), '–', 'bpi'), col('Round 1', bracketGames(P, ci, 1), 'Play-in'),
-    col('Semis', bracketGames(P, ci, 2)), col(ci ? 'West final' : 'East final', bracketGames(P, ci, 3))];
+  const game = ([h, a, w], tbd = '–', cap = '') => `<div>${cap ? `<div class="bcap">${cap}</div>` : ''}<div class="bm">${line(h, w, tbd)}${line(a, w, tbd)}</div></div>`;
+  const col = (label, games, tbd, caps = []) => `<div class="bcol"><div class="bh">${label}</div><div class="bms">${games.map((g, i) => game(g, tbd, caps[i])).join('')}</div></div>`;
+  const side = si => { const caps = [DIVS[si * 2][1], DIVS[si * 2 + 1][1]];
+    return [col('Div semis', bracketGames(P, si, 0), '–', caps), col('Div finals', bracketGames(P, si, 1), '2 v 3', caps), col('Semifinal', bracketGames(P, si, 2))]; };
   const fin = P.round > PO_LAST && P.hist[PO_LAST] ? P.hist[PO_LAST][0] : P.round === PO_LAST ? [...P.games[0], null] : [null, null, null];
   const champ = P.champ ? teamById(P.champ) : null;
-  const mid = `<div class="bcol bfin"><div class="bh">Finals</div><div class="bms">${game(fin)}${champ ? `<div class="bchamp ${champ.user ? 'yellow' : ''}">🏆 ${esc(champ.abbr)}</div>` : ''}</div></div>`;
+  const mid = `<div class="bcol bfin"><div class="bh">Final</div><div class="bms">${game(fin)}${champ ? `<div class="bchamp ${champ.user ? 'yellow' : ''}">🏆 ${esc(champ.abbr)}</div>` : ''}</div></div>`;
   return `${topBar(P.projected ? 'Projected bracket' : 'Playoff bracket', `<button class="btn icon" data-go="league" aria-label="Back">✕</button>`)}
     <div class="panel brk">${side(0).join('')}${mid}${side(1).reverse().join('')}</div>
-    <div class="muted fanote" style="font-size:12px;margin-top:6px">${P.projected ? 'If the season ended today. ' : ''}East on the left, West on the right. Play-in: the 9 v 10 winner plays the 1 seed, the 7 v 8 winner plays the 2 seed.</div>`;
+    <div class="muted fanote" style="font-size:12px;margin-top:6px">${P.projected ? 'If the season ended today. ' : ''}The top three in each division: 2 plays 3, the winner plays the division champion, then East meets Central and South meets West.</div>`;
 }
 function grow(p, steps){
   let guard = 0;
@@ -962,7 +959,7 @@ function startOffseason(){
   });
   const order = standings().reverse().map(x => x.id);
   const prospects = [];
-  [...POS, ...shuffle([...POS]).slice(0, 3)].forEach(pos => { for (let i = 0; i < 1; i++) { const p = makePlayer(pos, rnd(2.5, 5.5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1.5, 4.5)) * 2) / 2); p.sal = Math.max(1, Math.round(askSalary(p)) / 2); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); prospects.push(p); } });
+  POS.forEach(pos => { for (let i = 0; i < 2; i++) { const p = makePlayer(pos, rnd(2.5, 5.5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1.5, 4.5)) * 2) / 2); p.sal = Math.max(1, Math.round(askSalary(p)) / 2); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); prospects.push(p); } });
   G.phase = 'offseason';
   const fansWas = G.fans; G.fans = Math.max(FAN_MIN, G.fans - FAN_OFFSEASON);
   G.off = { step:'summary', finish, champ:`${champ.city} ${champ.name}`, record:`${t.w}-${t.l}`, fansWas, fansNow:G.fans, changes, retired, order, prospects, picks:2, round:1, fin:{ ...G.fin } };
@@ -1042,8 +1039,7 @@ function render(){
   const ui = $('#ui');
   if (SLOT === null || screen === 'slots') { ui.innerHTML = slotsHTML(); ui.dataset.screen = 'slots'; ui.scrollTop = 0; return; }
   if (!G) { ui.innerHTML = createHTML(); bindCreate(); ui.dataset.screen = 'create'; ui.scrollTop = 0; return; }
-  if (G.phase === 'playoffs' && G.playoffs && G.playoffs.v !== 2) startPlayoffs();   // a save from the old top-4 format: start the new bracket
-  const f = { kit:kitHTML, roster:rosterHTML, player:playerHTML, league:leagueHTML, bracket:bracketHTML, office:officeHTML, fa:faHTML, leaders:leadersHTML, post:postHTML, draft:draftHTML }[screen] || hubHTML;
+    const f = { kit:kitHTML, roster:rosterHTML, player:playerHTML, league:leagueHTML, bracket:bracketHTML, office:officeHTML, fa:faHTML, leaders:leadersHTML, post:postHTML, draft:draftHTML }[screen] || hubHTML;
   ui.innerHTML = f();
   window.scrollTo(0, 0); ui.scrollTop = 0;                           // the phone app scrolls #ui, not the page
   ui.dataset.screen = G ? screen : 'create';                         // only the stats list may scroll (see the phone CSS)
@@ -1052,16 +1048,16 @@ function render(){
 let createColor = 0;
 let pickedTeam = null;
 function createHTML(){
-  const col = conf => TEAMS.filter(T => T.conf === conf).sort((a, b) => a.city.localeCompare(b.city)).map(T => `
+  const col = conf => `<div class="label" style="margin:2px 0 4px">${DIV_NAME[conf]}</div><div class="tgrid">` + TEAMS.filter(T => T.conf === conf).sort((a, b) => a.city.localeCompare(b.city)).map(T => `
     <button class="tpick ${pickedTeam === T.abbr ? 'on' : ''}" data-team="${T.abbr}">
       <span class="badge sm" style="background:${T.c1};border-color:${T.c2};color:${T.c2 === '#000000' ? '#fff' : T.c2}">${T.abbr}</span>
-      <span class="tn">${esc(T.city)}<br><b>${esc(T.name)}</b></span></button>`).join('');
+      <span class="tn">${esc(T.city)}<br><b>${esc(T.name)}</b></span></button>`).join('') + '</div>';
   const T = TEAMS.find(x => x.abbr === pickedTeam);
   return `<div class="title" style="margin-bottom:8px">RETRO DISC</div>
-    <div class="muted intro" style="text-align:center;margin-bottom:10px">Pick your club. You take it over with seven 1-star players and build from there: sign free agents, train your players, win the league.</div>
-    <div class="hub"><div class="panel"><div class="label" style="margin-bottom:6px">East</div><div class="tgrid">${col('E')}</div></div>
-    <div class="panel"><div class="label" style="margin-bottom:6px">West</div><div class="tgrid">${col('W')}</div></div></div>
-    <div class="row" style="margin-top:10px"><button class="btn" data-a="toSlots">Saves</button><div class="grow muted">Slot ${SLOT} · ${T ? `${esc(T.city)} ${esc(T.name)} · ${T.conf === 'E' ? 'Eastern' : 'Western'} Conference` : 'Tap a team.'}</div><button class="btn go" id="cGo" ${T ? '' : 'disabled'}>Take the job</button></div>`;
+    <div class="muted intro" style="text-align:center;margin-bottom:10px">Pick your club. You take it over with five 1-star players and build from there: sign free agents, train your players, win the league.</div>
+    <div class="hub"><div class="panel">${col('E')}${col('C')}</div>
+    <div class="panel">${col('S')}${col('W')}</div></div>
+    <div class="row" style="margin-top:10px"><button class="btn" data-a="toSlots">Saves</button><div class="grow muted">Slot ${SLOT} · ${T ? `${esc(T.city)} ${esc(T.name)} · ${DIV_NAME[T.conf]} Division` : 'Tap a team.'}</div><button class="btn go" id="cGo" ${T ? '' : 'disabled'}>Take the job</button></div>`;
 }
 // the first screen: three save slots, each with Play (or New game) and Reset
 function slotsHTML(){
@@ -1101,11 +1097,11 @@ function hubHTML(){
         <div class="px" style="font-size:18px">VS</div>
         <div class="t">${badge(o)}<div class="n">${esc(o.name)}</div>${starsHTML(orr.stars)}<div class="muted num" style="font-size:12px">${o.w}-${o.l}</div></div>
       </div>
-      ${savedLive() ? (L => `<div class="row"><button class="btn go grow" data-a="resume">Resume · <span class="num">${qText(L.q)} ${clockText(L.clock)} · ${L.us}-${L.them}</span></button></div>`)(G.live)
+      ${savedLive() ? (L => `<div class="row"><button class="btn go grow" data-a="resume">Resume · <span class="num">${L.us}-${L.them}</span> · first to ${L.to || gameTo()}</button></div>`)(G.live)
         : `<div class="row"><button class="btn go grow" data-a="play">Play</button><button class="btn" data-a="sim">Sim</button></div>`}
     </div>`;
   } else if (G.phase === 'playoffs') {
-    left = `<div class="panel stack"><div class="label">Playoffs</div><div>${G.playoffs.seeds.includes('U') ? 'Your season is over.' : 'You missed the top 10 in your conference.'}</div><button class="btn go" data-a="simPlayoffs">Sim the playoffs</button></div>`;
+    left = `<div class="panel stack"><div class="label">Playoffs</div><div>${G.playoffs.seeds.includes('U') ? 'Your season is over.' : 'You missed the top three in your division.'}</div><button class="btn go" data-a="simPlayoffs">Sim the playoffs</button></div>`;
   } else left = offseasonHTML();
   return `${topBar(`${esc(t.city)} ${esc(t.name)}`)}
     <div class="hub">
@@ -1122,7 +1118,7 @@ function hubHTML(){
         <button class="btn" data-go="office">Front office</button>
         <button class="btn" data-go="fa">Free agents</button>
         <button class="btn" data-go="leaders">League leaders</button>
-        <button class="btn" data-a="settings" ${savedLive() ? 'disabled' : ''}>Game speed ${G.speed}x${savedLive() ? ' 🔒' : ''}</button>
+        <button class="btn" data-a="settings" ${savedLive() ? 'disabled' : ''}>First to ${gameTo()}${savedLive() ? ' 🔒' : ''}</button>
         <button class="btn" data-a="toSlots" style="grid-column:span 2">Saves · slot ${SLOT}</button>
         ${G.history.length ? `<div class="panel" style="grid-column:span 2;font-size:13px">${G.history.slice(0, 3).map(h => `<div class="row between"><span>S${h.season} · ${h.w}-${h.l}</span><span class="${h.finish === 'Champions' ? 'yellow' : 'muted'}">${esc(h.finish)}</span></div>`).join('')}</div>` : ''}
       </div>
@@ -1208,14 +1204,14 @@ function faHTML(){
     <div class="cards farow" style="--n:${Math.max(5, list.length)}">${list.length ? '' : '<div class="muted">No free agents at this position right now.</div>'}${list.map(p => { const need = signBonus(p); const cur = G.roster[p.pos]; const newPay = payroll() - (cur ? cur.sal : 0) + askSalary(p);
       const why = G.cash < need ? `NEEDS <span class="num">${money(need)}</span> CASH` : newPay > capNow() ? 'NO CAP ROOM' : ''; return card(p, { attr:`data-fa="${p.id}"`, dim:!!why, flag:why, fa:true }); }).join('')}</div>
     ${capBar(`<div class="box" style="text-align:center"><div class="label">Cash</div><div class="num ${G.cash < 0 ? 'debt' : ''}">${money(G.cash)}</div></div>`)}
-    <div class="muted fanote" style="font-size:12px;margin-top:6px">Signing replaces your player at that position. Bonus is paid up front, then 1/17 of the salary every game. Cap room: <span class="num">${money(room)}</span>.</div>`;
+    <div class="muted fanote" style="font-size:12px;margin-top:6px">Signing replaces your player at that position. Bonus is paid up front, then 1/16 of the salary every game. Cap room: <span class="num">${money(room)}</span>.</div>`;
 }
 function leagueHTML(){
-  const table = conf => `<div class="panel" style="overflow-x:auto"><div class="label" style="margin-bottom:4px">${conf === 'E' ? 'East' : 'West'}</div><table><thead><tr><th>Team</th><th>W</th><th>L</th><th>Diff</th><th>Team</th></tr></thead><tbody>
-    ${confStandings(conf).map((t, i) => `<tr class="${t.user ? 'me' : ''} ${i === 6 || i === 10 ? 'cut' : ''}"><td>${i + 1}. ${esc(t.abbr)} ${esc(t.name)}</td><td class="num">${t.w}</td><td class="num">${t.l}</td><td class="num">${t.pf - t.pa > 0 ? '+' : ''}${t.pf - t.pa}</td><td>${starsHTML(teamR(t).stars)}</td></tr>`).join('')}
+  const table = conf => `<div class="panel" style="overflow-x:auto"><div class="label" style="margin-bottom:4px">${DIV_NAME[conf]}</div><table><thead><tr><th>Team</th><th>W</th><th>L</th><th>Diff</th><th>Team</th></tr></thead><tbody>
+    ${confStandings(conf).map((t, i) => `<tr class="${t.user ? 'me' : ''} ${i === 3 ? 'cut' : ''}"><td>${i + 1}. ${esc(t.abbr)} ${esc(t.name)}</td><td class="num">${t.w}</td><td class="num">${t.l}</td><td class="num">${t.pf - t.pa > 0 ? '+' : ''}${t.pf - t.pa}</td><td>${starsHTML(teamR(t).stars)}</td></tr>`).join('')}
     </tbody></table></div>`;
   return `${topBar('Standings', `<button class="btn" data-go="bracket">Bracket</button><button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
-    <div class="hub">${table('E')}${table('W')}</div><div class="muted fanote" style="font-size:12px;margin-top:6px">Top 6 in each conference make the playoffs; 7th to 10th go to the play-in.</div>`;
+    <div class="hub">${DIVS.map(([c]) => table(c)).join('')}</div><div class="muted fanote" style="font-size:12px;margin-top:6px">The top three in each division make the playoffs.</div>`;
 }
 // every player on a team this season, ranked by any stat; per-game stats and percentages from p.s
 const LCOLS = [
@@ -1277,7 +1273,7 @@ function gateAt(fansPct, ticket = G.ticket, level = G.fac.arena){
 function moneyOutlook(){
   const f = Math.round(G.fans), star = rosterArr().reduce((s, p) => s + tvStarsFor(p), 0), payGame = payroll() / PAY_GAMES;
   const home = gateAt(f) + f * TV_HOME_PER_FAN + star - payGame, away = f * TV_AWAY_PER_FAN + star * TV_AWAY_STARS - payGame;
-  const season = 7 * home + 7 * away, tips = [];
+  const season = SEASON_GAMES / 2 * (home + away), tips = [];
   // win more: every win is +3% fans, which pays at every home game after it
   const winWorth = gateAt(Math.min(100, f + FAN_WIN)) - gateAt(f) + FAN_WIN * TV_HOME_PER_FAN;
   if (f < 100) tips.push({ v:winWorth * 7, t:`<b>Win games.</b> Each win is about +${FAN_WIN}% fans (more against better teams), worth about <span class="num">${money(winWorth)}</span> more every home game after it.` });
@@ -1321,7 +1317,7 @@ function officeHTML(){
         <div class="panel">
           <div class="row between"><span class="label">Cash</span><span class="px num ${G.cash < 0 ? 'debt' : 'good'}" style="font-size:18px">${money(G.cash)}</span></div>
           <div class="muted num fo-detail" style="font-size:12px;margin-top:4px;font-weight:500">This season: tickets ${money(f.gate)} · food ${money(f.food || 0)} · parking ${money(f.parking || 0)} · TV ${money(f.tv)}${f.bonus ? ` · playoffs ${money(f.bonus)}` : ''} · salaries -${money(f.salaries || 0)} · signing bonuses -${money(f.bonuses || 0)} · upgrades -${money(f.spend)}</div>
-          <div class="muted fo-detail" style="font-size:12px;margin-top:4px">Each game your players are paid 1/17 of their salary (<span class="num">${money(payroll() / PAY_GAMES)}</span> a game right now). Cash also pays for upgrades and signing bonuses.</div>
+          <div class="muted fo-detail" style="font-size:12px;margin-top:4px">Each game your players are paid 1/16 of their salary (<span class="num">${money(payroll() / PAY_GAMES)}</span> a game right now). Cash also pays for upgrades and signing bonuses.</div>
         </div>
         <div class="panel">
           <div class="row between"><span class="label">Ticket price</span><span class="px num" id="tp">$${G.ticket}</span></div>
@@ -1530,13 +1526,13 @@ function aiDraft(){
   while (O.prospects.length < 10) { const pos = pick(POS); const p = makePlayer(pos, rnd(2.5, 5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1, 4)) * 2) / 2); p.sal = Math.max(1, Math.round(askSalary(p)) / 2); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); O.prospects.push(p); }
 }
 function speedSheet(inGame){
-  openSheet(`<div class="px">Game speed</div><div class="muted" style="font-size:13px">How fast the game clock runs. At 10x a 15:00 quarter takes 90 seconds; 5x is twice as long, 15x a third shorter.</div>
-    ${inGame ? `<div class="panel" style="font-size:13px;padding:6px 10px">This game: <b class="yellow num">${G.speed}x</b>. Speed is set before the game, and the whole league plays this week at it.</div>`
-      : `<div class="row">${[5, 10, 15].map(s => `<button class="btn grow ${G.speed === s ? 'go' : ''}" data-s="${s}">${s}x</button>`).join('')}</div>
-      <div class="muted" style="font-size:12px">Every team's games this week are played at the speed you pick, so slower weeks mean more points for everyone, not only you.</div>`}
+  openSheet(`<div class="px">Game length</div><div class="muted" style="font-size:13px">There's no clock: the first team to this many goals wins.</div>
+    ${inGame ? `<div class="panel" style="font-size:13px;padding:6px 10px">This game: first to <b class="yellow num">${M.to}</b>. The length is set before the game, and the whole league plays this week to it.</div>`
+      : `<div class="row">${GAME_TO.map(n => `<button class="btn grow ${gameTo() === n ? 'go' : ''}" data-s="${n}">${n}</button>`).join('')}</div>
+      <div class="muted" style="font-size:12px">Every team's games this week are played to the number you pick, so longer games mean more goals for everyone, not only you.</div>`}
     ${inGame ? `<div class="row"><button class="btn go grow" id="res">Resume</button><button class="btn" id="simr">Sim rest</button></div>
       <button class="btn" id="savex">Save &amp; exit</button>` : ''}`, sh => {
-    sh.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { G.speed = +b.dataset.s; save(); closeSheet(); if (!inGame) render(); else paused = false; });
+    sh.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { G.target = +b.dataset.s; save(); closeSheet(); render(); });
     if (inGame) { sh.querySelector('#res').onclick = () => { closeSheet(); paused = false; }; sh.querySelector('#simr').onclick = () => { closeSheet(); simRest(); };
       sh.querySelector('#savex').onclick = () => { closeSheet(); saveAndExit(); }; }
   });
@@ -1594,7 +1590,7 @@ function kitHTML(){
    yards: x runs 0-110 along the field (goal lines at 20 and 90), y 0-40 across it, z is height. We attack to the
    right (score in x >= 90), they attack to the left. Drawn tilted like the Retro Basket court. */
 let CW = 320;                                                         // view width in field pixels: set by fit() to the screen's shape
-const CH = 180, PXF = 6.6, PYF = 3.1, PZF = 11, X0 = 14, Y0 = 44;     // pixels per yard along the field, across it, and of height
+const CH = 180, PXF = 6.6, PYF = 3.1, PZF = 6.5, X0 = 14, Y0 = 44;    // pixels per yard along the field, across it, and of height
 const FL = 110, FW = 40, EZ = 20, GOAL_L = EZ, GOAL_R = FL - EZ;
 const WORLD_W = Math.ceil(X0 * 2 + FL * PXF);
 const cv = $('#court'), ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
@@ -2003,22 +1999,38 @@ function drawHD(g, p, U, frame, X, feetY, face, ghost){
   if (!ghost) drawNumber(g, X - 7, top + spr.numRow, p.num, U.T);
   return top;
 }
-const BENCH_GAP = 2.4;                                               // yards between seats
+/* Players are drawn about 2 yards tall (user): the 14 x 24 letter sprite at half size, which is exactly one screen
+   pixel per sprite pixel on the 2x canvas, so it stays crisp. Benches and coaches are drawn at the same size. */
+const BENCH_GAP = 1.3;                                                // yards between seats
+function drawHalf(g, spr, X, top, face){
+  const h = spr.height / 2;
+  if ((face || 1) < 0) { g.save(); g.translate(X, 0); g.scale(-1, 1); g.drawImage(spr, -3.5, top, 7, h); g.restore(); }
+  else g.drawImage(spr, X - 3.5, top, 7, h);
+}
+// a jersey number in the 3 x 5 pixel font at half size, centered on the chest
+function drawSmallNumber(g, X, top, numRow, num, color){
+  const ds = String(num).split(''), w = ds.length * 4 - 1, x0 = X - 3.5 + Math.ceil((14 - w) / 2) / 2, y0 = top + numRow / 2;
+  g.fillStyle = color;
+  ds.forEach((d, i) => (FONT[d] || FONT[' ']).forEach((r, y) => [...r].forEach((ch, x) => { if (ch === '#') g.fillRect(x0 + (i * 4 + x) / 2, y0 + y / 2, .5, .5); })));
+}
+function drawSmall(g, p, U, frame, X, feetY, face){
+  const spr = sprite(p, U, frame), top = feetY - spr.height / 2;
+  drawHalf(g, spr, X, top, face); drawSmallNumber(g, X, top, spr.numRow, p.num, U.T);
+  return top;
+}
 function drawBench(side){
-  const B = M.bench[side], U = M.uni[side], seatY = Math.round(sy(-1.15));
-  const x0 = Math.round(sx(B.x0)) - 5, x1 = Math.round(sx(B.x0 + BENCH_GAP * 3)) + 6;
-  ctx.fillStyle = '#3c4466'; ctx.fillRect(x0, seatY - 8, x1 - x0, 4);                       // bench back
-  ctx.fillStyle = '#59628c'; ctx.fillRect(x0, seatY - 4, x1 - x0, 2);                       // seat
-  ctx.fillStyle = '#232a45'; ctx.fillRect(x0 + 1, seatY - 2, 2, 3); ctx.fillRect(x1 - 3, seatY - 2, 2, 3);
+  const B = M.bench[side], U = M.uni[side], seatY = Math.round(sy(-1.2));
+  const x0 = Math.round(sx(B.x0)) - 4, x1 = Math.round(sx(B.x0 + BENCH_GAP * 3)) + 5;
+  ctx.fillStyle = '#3c4466'; ctx.fillRect(x0, seatY - 5, x1 - x0, 2);                       // bench back
+  ctx.fillStyle = '#59628c'; ctx.fillRect(x0, seatY - 3, x1 - x0, 1);                       // seat
+  ctx.fillStyle = '#232a45'; ctx.fillRect(x0, seatY - 2, 1, 2); ctx.fillRect(x1 - 1, seatY - 2, 1, 2);
   B.players.forEach((p, i) => {
-    const X = Math.round(sx(B.x0 + i * BENCH_GAP)), spr = seatedSprite(p, U), top = seatY - spr.height + 1;
-    ctx.drawImage(spr, X - 7, top);
-    drawNumber(ctx, X - 7, top + spr.numRow, p.num, U.T);
+    const X = Math.round(sx(B.x0 + i * BENCH_GAP)), spr = seatedSprite(p, U), top = seatY - spr.height / 2 + .5;
+    drawHalf(ctx, spr, X, top, 1); drawSmallNumber(ctx, X, top, spr.numRow, p.num, U.T);
   });
   const co = M.coaches[side], X = Math.round(sx(co.x)), Y = Math.round(sy(-0.5)), spr = coachSprite(co.look, co.tie);
-  ctx.fillStyle = 'rgba(10,50,20,.34)'; ctx.fillRect(X - 5, Y - 1, 11, 2);
-  if (co.face < 0) { ctx.save(); ctx.translate(X, 0); ctx.scale(-1, 1); ctx.drawImage(spr, -7, Y - spr.height); ctx.restore(); }
-  else ctx.drawImage(spr, X - 7, Y - spr.height);
+  ctx.fillStyle = 'rgba(10,50,20,.34)'; ctx.fillRect(X - 3, Y - 1, 7, 1);
+  drawHalf(ctx, spr, X, Y - spr.height / 2, co.face);
 }
 function drawNumber(g, left, top, num, color){
   // drawn in half-pixels so a two-digit number fits inside the jersey; centered on the chest (sprite column 7)
@@ -2029,30 +2041,31 @@ function drawNumber(g, left, top, num, color){
 }
 function drawPlayer(e, U, marker){
   const X = Math.round(sx(e.x)), Yg = Math.round(sy(e.y)), Y = Math.round(sy(e.y, e.z || 0));
-  const frame = (e.poseT || 0) > 0 ? 'shoot' : e.moving ? 'run' + (((Math.floor(e.anim) % RUN_FRAMES) + RUN_FRAMES) % RUN_FRAMES) : 'stand';
+  const frame = (e.poseT || 0) > 0 ? 'shoot' : e.moving ? 'run' + (((Math.floor(e.anim / 2) % 4) + 4) % 4) : 'stand';
   // soft oval shadow, smaller when he's in the air
-  const air = clamp(1 - (e.z || 0) / 3, .5, 1);
-  ctx.fillStyle = 'rgba(10,50,20,.34)'; ctx.fillRect(X - 6 * air, Yg - 1, 12 * air + 1, 2); ctx.fillRect(X - 4 * air, Yg - 2, 8 * air + 1, 1); ctx.fillRect(X - 4 * air, Yg + 1, 8 * air + 1, 1);
+  const air = (e.z || 0) > .3 ? 1 : 0;
+  ctx.fillStyle = 'rgba(8,40,16,.38)'; ctx.fillRect(X - 3 + air, Yg - 1, 7 - air * 2, 2); ctx.fillRect(X - 2, Yg - 2 + air, 5, 1);
   let top;
   if ((e.dive || 0) > 0) {                                            // a layout: stretched out flat, arms first
-    const spr = hdSprite(e.p, U, 'shoot'), h = spr.rowsH, f = e.face || 1;
-    ctx.save(); ctx.translate(X, Yg - 5); ctx.rotate(f * Math.PI / 2 * .88); ctx.drawImage(spr, -7, -h / 2, 14, h); ctx.restore();
-    top = Yg - 14;
-  } else top = drawHD(ctx, e.p, U, frame, X, Y, e.face || 1);
+    const spr = sprite(e.p, U, 'shoot'), h = spr.height / 2, f = e.face || 1;
+    ctx.save(); ctx.translate(X, Yg - 3); ctx.rotate(f * Math.PI / 2 * .9); ctx.drawImage(spr, -3.5, -h / 2, 7, h); ctx.restore();
+    top = Yg - 8;
+  } else top = drawSmall(ctx, e.p, U, frame, X, Y, e.face || 1);
   if (marker) {
-    const my = top - 6;                                               // just above the hair
-    ctx.fillStyle = marker; ctx.fillRect(X - 3, my, 7, 2); ctx.fillRect(X - 2, my + 2, 5, 1); ctx.fillRect(X - 1, my + 3, 3, 1); ctx.fillRect(X, my + 4, 1, 1);
+    const my = top - 5;                                               // just above his head
+    ctx.fillStyle = '#1b2440'; ctx.fillRect(X - 3, my - 1, 7, 3); ctx.fillRect(X - 2, my + 2, 5, 1); ctx.fillRect(X - 1, my + 3, 3, 1);
+    ctx.fillStyle = marker; ctx.fillRect(X - 2, my, 5, 1); ctx.fillRect(X - 1, my + 1, 3, 1); ctx.fillRect(X, my + 2, 1, 1);
   }
 }
 // the disc: a flat white ellipse seen from the side, its shadow on the grass under it
-const DISC = ['..kkkk..', '.kWWWWk.', 'kWWWWWWk', 'kwwWWwwk', '.kddddk.', '..kkkk..'];
+const DISC = ['.WWWWW.', 'kkdddkk'];
 const DISC_PAL = { W:'#ffffff', w:'#e3e8f2', d:'#b3bccd', k:'#1b2440' };
-const discSpr = (() => { const c = document.createElement('canvas'); c.width = 8; c.height = 6; const g = c.getContext('2d'); DISC.forEach((r, y) => [...r].forEach((ch, x) => { if (DISC_PAL[ch]) { g.fillStyle = DISC_PAL[ch]; g.fillRect(x, y, 1, 1); } })); return c; })();
+const discSpr = (() => { const c = document.createElement('canvas'); c.width = 7; c.height = 2; const g = c.getContext('2d'); DISC.forEach((r, y) => [...r].forEach((ch, x) => { if (DISC_PAL[ch]) { g.fillStyle = DISC_PAL[ch]; g.fillRect(x, y, 1, 1); } })); return c; })();
 function drawDisc(){
   const d = M.disc, X = Math.round(sx(d.x)), Yg = Math.round(sy(d.y)), Y = Math.round(sy(d.y, d.z));
   const k = clamp(1 - d.z / 7, .4, 1);
-  ctx.fillStyle = 'rgba(8,40,16,.42)'; ctx.fillRect(Math.round(X - 4 * k), Yg, Math.round(8 * k) + 1, 2);
-  ctx.drawImage(discSpr, X - 4, Y - 3);
+  ctx.fillStyle = 'rgba(8,40,16,.42)'; ctx.fillRect(Math.round(X - 3 * k), Yg, Math.round(6 * k) + 1, 1);
+  ctx.drawImage(discSpr, X - 3, Y - 1);
 }
 
 /* ---- match state ---- */
@@ -2072,16 +2085,15 @@ addEventListener('resize', () => { if (M) fit(); });
 addEventListener('orientationchange', () => { setTimeout(() => { if (M) fit(); }, 250); setTimeout(() => { if (M) fit(); }, 700); });
 if (window.visualViewport) visualViewport.addEventListener('resize', () => { if (M) fit(); });
 
-const QUARTER = 900, OT_LEN = 300;                                    // game seconds in a quarter and in overtime
 function startMatch(){
   const ng = nextGameInfo(); if (!ng) return;
   const t = userTeam();
   const blank = () => ({ cmp:0, att:0, to:0, d:0, poss:0 });
   const ks = kitSel || { us:G.kit || { j:'home', s:'home' }, them:{ j:'away', s:'away' } };
   const ent = (p, face) => ({ p, x:55, y:20, z:0, tx:55, ty:20, vx:0, vy:0, anim:0, moving:false, face, run:0, lagT:0, lx:55, ly:20, cutWait:0, inCut:false, tried:false, dPrev:1e9 });
-  M = { ...ng, t, uni:{ us:uniColors(t, ks.us), them:uniColors(ng.opp, ks.them) }, id:uid(), us:0, them:0, box:{}, pbox:{}, st:{ us:blank(), them:blank() }, q:1, clock:QUARTER, phase:'idle', flash:0, shake:0, pop:0,
+  M = { ...ng, t, uni:{ us:uniColors(t, ks.us), them:uniColors(ng.opp, ks.them) }, id:uid(), us:0, them:0, box:{}, pbox:{}, st:{ us:blank(), them:blank() }, to:gameTo(), half:false, phase:'idle', flash:0, shake:0, pop:0,
     our:POS.map(pos => ent(G.roster[pos], 1)), th:ng.opp.players.map(p => ent(p, -1)),
-    disc:{ x:55, y:20, z:0, holder:null, fl:null }, off:'us', stall:0, ctrl:3, aim:null, think:1, startQ:Math.random() < .5 ? 'us' : 'them', chase:null };
+    disc:{ x:55, y:20, z:0, holder:null, fl:null }, off:'us', stall:0, ctrl:2, aim:null, think:1, first:Math.random() < .5 ? 'us' : 'them', chase:null };
   // the stands fill to this game's attendance: yours from fans and ticket price, theirs from their record
   const oppGp = ng.opp.w + ng.opp.l, oppFill = clamp(.55 + (oppGp ? ng.opp.w / oppGp : .5) * .4, .4, .98);
   const po = ng.kind === 'playoffs';                                // playoff atmosphere: the look only, the gate still follows the fans
@@ -2100,30 +2112,21 @@ function startMatch(){
   fit(); hud(); setTimeout(() => { if (M) fit(); }, 300);
   const L = savedLive();
   if (L) {                                                          // resuming a saved game: the team that had the disc receives a pull
-    Object.assign(M, { q:L.q, clock:L.clock, us:L.us, them:L.them, box:L.box || {}, pbox:L.pbox || {}, st:L.st || M.st, startQ:L.startQ || 'us' });
+    Object.assign(M, { to:L.to || M.to, half:!!L.half, us:L.us, them:L.them, box:L.box || {}, pbox:L.pbox || {}, st:L.st || M.st, first:L.first || 'us' });
     hud(); startPull(L.poss === 'them' ? 'them' : 'us');
-    banner('RESUMED', `${qText(L.q)} · ${clockText(L.clock)}`, 1300);
+    banner('RESUMED', `${L.us}-${L.them} · first to ${M.to}`, 1300);
   } else {
-    startPull(quarterStarter(1));
-    banner(po ? ng.label.toUpperCase() : 'GAME ON', M.off === 'us' ? `${t.name} receive` : `${ng.opp.name} receive`, po ? 1800 : 1200);
+    startPull(M.first);
+    banner(po ? ng.label.toUpperCase() : 'FIRST TO ' + M.to, M.off === 'us' ? `${t.name} receive` : `${ng.opp.name} receive`, po ? 1800 : 1200);
   }
   lastT = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(loop);
 }
 /* ---- save & exit a game in progress ----
-   G.live keeps the quarter, clock, score, box scores and who had the disc. The game isn't recorded until it's
-   finished; resuming starts with a pull to that team and the clock runs on from there. */
-// whoever receives to start the 1st also receives to start the 4th; the other team receives the 2nd and 3rd. Overtime is a flip.
-function quarterStarter(q){
-  const first = M.startQ || 'us', other = first === 'us' ? 'them' : 'us';
-  if (q === 1 || q === 4) return first;
-  if (q === 2 || q === 3) return other;
-  return Math.random() < .5 ? 'us' : 'them';
-}
+   G.live keeps the score, box scores, who had the disc and whether halftime has been taken. The game isn't recorded
+   until it's finished; resuming starts with a pull to the team that had it. */
 function saveAndExit(){
   if (!M || M.phase === 'done') return;
-  let q = M.q, clock = M.clock, poss = M.off;
-  if (clock <= 0) { q++; clock = q > 4 ? OT_LEN : QUARTER; poss = quarterStarter(q); }   // saved at a quarter break: resume at the next one
-  G.live = { opp:M.opp.id, kind:M.kind, week:G.week, season:G.season, q, clock, us:M.us, them:M.them, poss, startQ:M.startQ, box:M.box, pbox:M.pbox, st:M.st, ks:kitSel };
+  G.live = { opp:M.opp.id, kind:M.kind, week:G.week, season:G.season, to:M.to, half:M.half, us:M.us, them:M.them, poss:M.off, first:M.first, box:M.box, pbox:M.pbox, st:M.st, ks:kitSel };
   M = null; cancelAnimationFrame(raf); paused = false;
   $('#game').hidden = true; $('#ui').hidden = false;
   save(); screen = 'hub'; render();
@@ -2136,12 +2139,9 @@ function savedLive(){
   if (!ng || ng.opp.id !== L.opp || ng.kind !== L.kind || L.season !== G.season || (L.kind === 'regular' && L.week !== G.week)) { delete G.live; return null; }
   return L;
 }
-const clockText = c => `${Math.floor(Math.max(0, c) / 60)}:${String(Math.floor(Math.max(0, c) % 60)).padStart(2, '0')}`;
-const qText = q => q > 4 ? 'OT' : ['1st', '2nd', '3rd', '4th'][q - 1];
 function hud(){
   $('#sU').textContent = M.us; $('#sO').textContent = M.them;
-  $('#qq').textContent = M.q > 4 ? 'OT' : ['1ST', '2ND', '3RD', '4TH'][M.q - 1];
-  $('#qc').textContent = clockText(M.clock);
+  $('#qc').textContent = M.to;
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   $('#pU').className = 'poss' + (play && M.off === 'us' ? ' on' : ''); $('#pO').className = 'poss' + (play && M.off === 'them' ? ' on' : '');
   $('#shc').textContent = M.phase === 'live' ? Math.min(STALL, Math.floor(M.stall) + 1) : '';
@@ -2183,8 +2183,8 @@ function moveTo(e, tx, ty, sp, dt){
 }
 
 /* ---- offense off the disc: everyone keeps cutting ----
-   Slots 0-2 are the handlers (HN, RS, SW): they stay within a short throw of the disc, level with it or just behind.
-   Slots 3-4 (MD, WG) cut underneath, 8 to 30 yards downfield. Slots 5-6 (ST, DP) go deep, 16 to 52 yards.
+   Slots 0-1 are the handlers (HN, RS): they stay within a short throw of the disc, level with it or just behind.
+   Slots 2-3 (MD, WG) cut underneath, 8 to 30 yards downfield. Slot 4 (DP) goes deep, 16 to 52 yards.
    Cutters alternate coming back to the disc and going away from it, so somebody is always arriving open. */
 function refPoint(){ const h = holderEnt(); if (h) return h; const F = M.disc.fl; return F ? F.target : M.disc; }
 function setCut(e, i, side){
@@ -2192,8 +2192,8 @@ function setCut(e, i, side){
   let best = null;
   for (let n = 0; n < 8; n++) {
     let f, y;
-    if (i <= 2) { f = rnd(-5, 9); y = clamp(R.y + rnd(-17, 17), 3, 37); if (Math.abs(y - R.y) < 6 && Math.abs(f) < 6) y = clamp(R.y + (R.y < 20 ? 9 : -9), 3, 37); }
-    else if (i <= 4) { f = e.inCut ? rnd(8, 15) : rnd(18, 30); y = rnd(4, 36); }
+    if (i <= 1) { f = rnd(-5, 9); y = clamp(R.y + rnd(-17, 17), 3, 37); if (Math.abs(y - R.y) < 6 && Math.abs(f) < 6) y = clamp(R.y + (R.y < 20 ? 9 : -9), 3, 37); }
+    else if (i <= 3) { f = e.inCut ? rnd(8, 15) : rnd(18, 30); y = rnd(4, 36); }
     else { f = e.inCut ? rnd(16, 26) : rnd(32, 52); y = rnd(5, 35); }
     const p = { x:clamp(R.x + d * f, 3, FL - 3), y };
     best = p;
@@ -2258,14 +2258,14 @@ function userMoves(e, dt){
                   way (anyone near its path can get a hand on it), a long one goes up over everybody and comes down
    Past the spot it keeps drifting and settles to the grass over the next half second or so.
    Strength also sets the longest throw: 35 yards at 1/10 up to 70 at 10/10.
-   Throwing is accuracy (user's numbers): the most a throw can miss by is 20 yards at 1/10 down to 5 at 10/10, any
+   Throwing is accuracy (user's numbers): the most a throw can miss by is 10 yards at 1/10 down to 3 at 10/10, any
    amount up to that being equally likely, so anyone can hit one dead on but a good thrower does it far more often.
    That is the miss at the thrower's full distance; shorter throws miss in proportion (a quarter of it at point blank). */
 const STALL = 10;                                                     // real seconds to throw it
 const STOP_TIME = .32;                                                // seconds a catcher takes to pull up
 const ARRIVE = .35, REACH_Z = 2.7, CATCH_R = 2, DEF_R = 1.6, CLEAN_R = 1.2, LIVE_AFTER = 3.5;
 const maxRange = p => 35 + (clamp(p.str, 1, 10) - 1) * 35 / 9;
-const maxErr = p => 20 - (clamp(p.thr, 1, 10) - 1) * 15 / 9;
+const maxErr = p => 10 - (clamp(p.thr, 1, 10) - 1) * 7 / 9;         // 10 yards at 1/10 down to 3 at 10/10 (user; first spec was 20 to 5)
 const errAt = (p, D) => maxErr(p) * (.25 + .75 * clamp(D / maxRange(p), 0, 1));
 const flightTime = (D, str) => (.5 + .042 * D) * (1.22 - .044 * clamp(str, 1, 10));
 function throwDisc(side, e, T, opts = {}){
@@ -2289,7 +2289,7 @@ function throwDisc(side, e, T, opts = {}){
 }
 function updateDisc(dt){
   const d = M.disc, F = d.fl, h = holderEnt();
-  if (h) { d.x = h.x + (h.face || 1) * .55; d.y = h.y + .05; d.z = 1.05; return; }
+  if (h) { d.x = h.x + (h.face || 1) * .6; d.y = h.y + .05; d.z = .95; return; }
   if (!F) { d.z = 0; return; }
   F.t += dt;
   const s = F.D * (1 - Math.exp(-F.k * F.t)) / (1 - ARRIVE);
@@ -2315,10 +2315,10 @@ function updateDisc(dt){
   for (const c of cands) { if (!M.disc.fl) break; tryCatch(c); }
 }
 /* Catching: the slower it's floating when it gets to you, the easier.
-     a teammate: (88% + 1.1% per catching point) at 11 yd/s or slower, losing 4% of that for every yd/s faster;
-                 15% less if he has to lay out (more than 1.2 yd away), 10% less above his head, 5% less with a
-                 defender on him
-     a defender: (4% + 1.4% per catching point) within 1.6 yd, same speed rule, 30% less at full stretch or above
+     a teammate: (93% + 0.6% per catching point) at 11 yd/s or slower, losing 4% of that for every yd/s faster;
+                 15% less if he has to lay out (more than 1.2 yd away), 10% less above his head, 7% less with a
+                 defender on him (an open man rarely drops a soft one)
+     a defender: (5% + 1.6% per catching point) within 1.6 yd, same speed rule, 30% less at full stretch or above
                  his head; the one you're running yourself gets double. Anything he gets is an interception. */
 function tryCatch({ e, side, i, dd }){
   const F = M.disc.fl, d = M.disc, own = side === F.side;
@@ -2328,8 +2328,8 @@ function tryCatch({ e, side, i, dd }){
   if (F.pull) p = .97;
   else if (own) {
     const guarded = teamOf(otherSide(side)).some(o => dist(o, e) < 1.5);
-    p = (.88 + .011 * e.p.cat) * sp * (far ? .85 : 1) * (high ? .9 : 1) * (guarded ? .95 : 1);
-  } else p = (.04 + .014 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (side === 'us' && !M.auto && i === M.ctrl ? 2 : 1);
+    p = (.93 + .006 * e.p.cat) * sp * (far ? .85 : 1) * (high ? .9 : 1) * (guarded ? .93 : 1);
+  } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (side === 'us' && !M.auto && i === M.ctrl ? 2 : 1);
   e.poseT = .4; if (far) e.dive = .5; else if (high) e.z = .8;
   if (Math.random() >= p) {
     if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).to++; turnover({ x:d.x, y:d.y }, otherSide(side), side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }
@@ -2346,7 +2346,6 @@ function tryCatch({ e, side, i, dd }){
     if (inGoal(e, side)) { goal(side, e, thrower); return; }
     if (!inField(e)) { d.holder = null; turnover({ x:e.x, y:e.y }, otherSide(side), 'OUT OF BOUNDS'); M.st[side].to++; return; }
     M.phase = 'live'; M.stall = 0; M.think = rnd(.8, 1.7); afterCatch(side);
-    if (M.buzzer) endQuarter();
     return;
   }
   // an interception
@@ -2357,7 +2356,6 @@ function tryCatch({ e, side, i, dd }){
   if (inGoal(e, side)) { goal(side, e, null); return; }               // caught in the end zone he attacks: that's a score
   if (!inField(e)) { d.holder = null; turnover({ x:e.x, y:e.y }, side, ''); return; }
   M.phase = 'live'; M.stall = 0; M.think = rnd(1, 1.8); afterCatch(side); pickCtrl();
-  if (M.buzzer) endQuarter();
 }
 function afterCatch(side){ teamOf(side).forEach((e, i) => { if (!(M.disc.holder && M.disc.holder.i === i)) setCut(e, i, side); }); }
 // it hit the grass: the other team's disc where it landed (or where it went out)
@@ -2379,7 +2377,6 @@ function turnover(spot, side, text){
   teamOf(side).forEach((e, i) => { if (i !== M.pick) setCut(e, i, side); });
   if (text) banner(text, side === 'us' ? 'Your disc' : 'Their disc', 800);
   pickCtrl(); hud();
-  if (M.buzzer) endQuarter();
 }
 function pickUp(side, i){
   const e = teamOf(side)[i];
@@ -2405,9 +2402,9 @@ function startPull(receiving){
   const R = teamOf(receiving), P = teamOf(pulling);
   const ownLine = side => side === 'us' ? GOAL_L : GOAL_R;           // we defend the left end zone, they defend the right
   [...M.our, ...M.th].forEach(e => { e.slide = null; e.run = 0; e.z = 0; e.dive = 0; e.poseT = 0; e.manual = 0; e.cutWait = 0; e.vx = e.vy = 0; e.moving = false; });
-  R.forEach((e, i) => { e.x = ownLine(receiving) + rd * rnd(3, 12); e.y = 4 + i * 5.3 + rnd(-1, 1); e.tx = e.x; e.ty = e.y; e.face = rd; });
-  P.forEach((e, i) => { e.x = ownLine(pulling); e.y = 4 + i * 5.3; e.tx = e.x; e.ty = e.y; e.face = -rd; e.lx = R[i].x; e.ly = R[i].y; e.lagT = 0; });
-  M.off = receiving; M.buzzer = false; M.aim = null; M.stall = 0;
+  R.forEach((e, i) => { e.x = ownLine(receiving) + rd * rnd(3, 12); e.y = 5 + i * 7.5 + rnd(-1, 1); e.tx = e.x; e.ty = e.y; e.face = rd; });
+  P.forEach((e, i) => { e.x = ownLine(pulling); e.y = 5 + i * 7.5; e.tx = e.x; e.ty = e.y; e.face = -rd; e.lx = R[i].x; e.ly = R[i].y; e.lagT = 0; });
+  M.off = receiving; M.aim = null; M.stall = 0;
   const puller = P[0];
   M.disc.holder = { side:pulling, i:0 };
   const T = { x:ownLine(receiving) + rd * rnd(12, 26), y:rnd(10, 30) };
@@ -2446,10 +2443,10 @@ function update(dt){
   M.flash = Math.max(0, M.flash - dt); if (M.shake > 0) M.shake -= dt; if (M.pop > 0) M.pop -= dt;
   for (const e of [...M.our, ...M.th]) { if (e.poseT > 0) e.poseT -= dt; if (e.dive > 0) e.dive -= dt; if (e.z > 0) e.z = Math.max(0, e.z - dt * 3); }
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
-  if (play) { M.clock -= dt * G.speed; M.st[M.off].poss += dt * G.speed; }
+  if (play) M.st[M.off].poss += dt;
   if (M.phase === 'score') {
     M.scoreT -= dt;
-    if (M.scoreT <= 0) { if (M.q > 4 || M.clock <= 0) endQuarter(); else startPull(otherSide(M.lastGoal)); }
+    if (M.scoreT <= 0) afterGoal();
   } else if (play) {
     if (M.phase === 'live') {
       M.stall += dt;
@@ -2458,25 +2455,21 @@ function update(dt){
     }
     if (M && play) { updateOffense(M.off, dt); updateDefense(otherSide(M.off), dt); }
     updateDisc(dt);
-    if (M && M.clock <= 0 && ['live', 'loose', 'pull', 'air'].includes(M.phase)) {
-      M.clock = 0;
-      if (M.phase === 'air') M.buzzer = true; else endQuarter();      // a throw in the air at the buzzer plays out
-    }
   }
   if (M) hud();
 }
-function endQuarter(){
-  if (M.phase === 'break' || M.phase === 'done') return;              // already over (a leftover timer can call again)
-  M.clock = Math.max(0, M.clock); M.buzzer = false; M.aim = null; M.disc.fl = null;
-  const q = M.q, final = q >= 4 && M.us !== M.them;
-  M.phase = final ? 'done' : 'break'; hud();
-  const title = final ? 'FINAL' : q === 1 ? 'END OF 1ST' : q === 2 ? 'HALFTIME' : q === 3 ? 'END OF 3RD' : q === 4 ? 'END OF REGULATION' : 'END OF OT';
-  const span = final ? 'Full game' : q === 1 ? '1st quarter' : q === 2 ? '1st half' : q === 3 ? 'Quarters 1–3' : 'Full game so far';
-  showStats(title, span, final ? 'Finish' : q >= 4 ? 'OT' : 'Q' + (q + 1), () => {
+/* After a goal: the game ends when someone reaches the target; halftime comes when the first team gets halfway there
+   (4 of 7, 5 of 10, 6 of 12), and the team that pulled to start the game receives to start the second half.
+   Otherwise the team that just scored pulls to the other. */
+function afterGoal(){
+  if (M.phase === 'break' || M.phase === 'done') return;
+  const final = Math.max(M.us, M.them) >= M.to, half = !final && !M.half && Math.max(M.us, M.them) >= Math.ceil(M.to / 2);
+  if (!final && !half) { startPull(otherSide(M.lastGoal)); return; }
+  if (half) M.half = true;
+  M.phase = final ? 'done' : 'break'; M.aim = null; M.disc.fl = null; hud();
+  showStats(final ? 'FINAL' : 'HALFTIME', final ? 'Full game' : '1st half', final ? 'Finish' : '2nd half', () => {
     if (final) { finishLive(M.id); return; }
-    M.q++; M.clock = M.q > 4 ? OT_LEN : QUARTER;
-    startPull(quarterStarter(M.q)); hud();
-    if (M.q > 4) banner('OVERTIME', 'Next goal wins', 1400);
+    startPull(otherSide(M.first)); hud();
   });
 }
 function showStats(title, span, cta, onGo){
@@ -2513,11 +2506,8 @@ function finishLive(id){
 function simRest(){
   if (!M) return;
   const U = userRatings(), O = teamR(M.opp);
-  const quartersLeft = (M.q <= 4 ? 4 - M.q : 0) + M.clock / QUARTER;
-  const n = Math.round(simPoss() / 4 * quartersLeft);
-  const one = () => { const g = simPossession(U, O); simCredit(M.box, M.pbox); M.us += g; M.them += simPossession(O, U); };
-  for (let i = 0; i < n; i++) one();
-  while (M.us === M.them) one();
+  let ours = M.off === 'us';                                          // trade possessions from here until someone gets to the target
+  while (M.us < M.to && M.them < M.to) { if (ours) { M.us += simPossession(U, O); simCredit(M.box, M.pbox); } else M.them += simPossession(O, U); ours = !ours; }
   finishLive(M.id);
 }
 
@@ -2544,8 +2534,8 @@ cv.addEventListener('pointerdown', ev => {
     ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch {}
     M.aim = { x0:pt.x, y0:pt.y, cx:pt.x, cy:pt.y, id:ev.pointerId };
   } else if (M.off === 'them' && ['live', 'air', 'loose', 'pull'].includes(M.phase)) {
-    let best = -1, bd = 18;
-    M.our.forEach((e, i) => { const d = Math.hypot(sx(e.x) - pt.x, sy(e.y) - 12 - pt.y); if (d < bd) { bd = d; best = i; } });
+    let best = -1, bd = 16;
+    M.our.forEach((e, i) => { const d = Math.hypot(sx(e.x) - pt.x, sy(e.y) - 6 - pt.y); if (d < bd) { bd = d; best = i; } });
     if (best >= 0) { M.ctrl = best; M.our[best].manual = 0; }
   }
 });
