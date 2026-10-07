@@ -2337,26 +2337,32 @@ function updateDisc(dt){
   cands.sort((a, b) => a.dd - b.dd);
   for (const c of cands) { if (!M.disc.fl) break; tryCatch(c); }
 }
-/* Catching: the slower it's floating when it gets to you, the easier.
-     a teammate: (93% + 0.6% per catching point) at 11 yd/s or slower, losing 4% of that for every yd/s faster;
-                 15% less if he has to lay out (more than 1.2 yd away), 10% less above his head, 7% less with a
-                 defender on him (an open man rarely drops a soft one)
+/* Catching (user's numbers): being open or covered decides nearly everything.
+     a teammate, with a defender within CONTEST_R (2) yards of him: the defender knocks it to the ground 60% of the time
+                 against a 1/10 catcher, 35% against a 10/10 (so he holds on to 40% up to 65%)
+     a teammate, open and on the run: caught 92% of the time at 1/10 catching, 98% at 10/10
+     a teammate, open and standing still: 95% at 1/10, 100% at 10/10
+   All of those are for a disc floating in at 11 yd/s or slower; a faster one is 4% harder for every yd/s over that
+   (the 50-yard throw that goes past a man at 20).
      a defender: (5% + 1.6% per catching point) within 1.6 yd, same speed rule, 30% less at full stretch or above
                  his head, and nearly half as likely when the receiver is right there too. Anything he gets is an
                  interception. */
+const CONTEST_R = 2;
+const CATCH = { covered:[.40, .65], running:[.92, .98], still:[.95, 1] };   // chance at 1/10 and at 10/10 catching
 function tryCatch({ e, side, i, dd }){
   const F = M.disc.fl, d = M.disc, own = side === F.side;
   e.tried = true;
   const sp = clamp(1 - Math.max(0, F.v - 11) * .04, .15, 1), far = dd > CLEAN_R, high = d.z > 2;
-  let p;
+  let p, covered = false;
   if (F.pull) p = .97;
   else if (own) {
-    const guarded = teamOf(otherSide(side)).some(o => dist(o, e) < 1.5);
-    p = (.93 + .006 * e.p.cat) * sp * (far ? .85 : 1) * (high ? .9 : 1) * (guarded ? .93 : 1);
+    covered = teamOf(otherSide(side)).some(o => dist(o, e) < CONTEST_R);
+    const band = CATCH[covered ? 'covered' : Math.hypot(e.vx || 0, e.vy || 0) > 1 ? 'running' : 'still'];
+    p = lerp(band[0], band[1], (clamp(e.p.cat, 1, 10) - 1) / 9) * sp;
   } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (teamOf(F.side).some(o => o !== F.thrower && dist(o, d) < 2.2) ? .55 : 1) * ZONE[side].pick;   // a receiver right there shields it
   e.poseT = .4; if (far) e.dive = .5; else if (high) e.z = .8;
   if (Math.random() >= p) {
-    if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).tgt++; turnover({ x:d.x, y:d.y }, otherSide(side), side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }
+    if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).tgt++; turnover({ x:d.x, y:d.y }, otherSide(side), covered ? 'KNOCKED DOWN' : side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }   // with a defender on him it was the defender's doing
     return;                                                           // a defender who misses just watches it go by
   }
   // caught
@@ -2399,7 +2405,7 @@ function turnover(spot, side, text){
   M.off = side; M.phase = 'loose'; M.stall = 0; M.aim = null; M.chase = null;
   M.pick = nearestIdx(teamOf(side), d);
   teamOf(side).forEach((e, i) => { if (i !== M.pick) setCut(e, i, side); });
-  const lost = M.st[otherSide(side)], why = /DROP/.test(text) ? 'drop' : /STALL/.test(text) ? 'stall' : text ? 'miss' : '';
+  const lost = M.st[otherSide(side)], why = /KNOCK/.test(text) ? 'kd' : /DROP/.test(text) ? 'drop' : /STALL/.test(text) ? 'stall' : text ? 'miss' : '';
   if (why) lost[why] = (lost[why] || 0) + 1;
   if (text) banner(text, side === 'us' ? 'Your disc' : 'Their disc', 800);
   hud();
@@ -2510,6 +2516,7 @@ function showStats(title, span, cta, onGo){
   const time = sec => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
   const rows = [
     ['Completions', frac(U.cmp, U.att), frac(T.cmp, T.att)],
+    ['Knocked down', U.kd || 0, T.kd || 0],
     ['Dropped', U.drop || 0, T.drop || 0],
     ['Missed throws', U.miss || 0, T.miss || 0],
     ['Picked off', T.d, U.d],
