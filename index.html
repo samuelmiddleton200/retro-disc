@@ -158,7 +158,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .card.dim{opacity:.45}
 .card .flag{position:absolute;inset:auto 0 0 0;background:var(--red);font-family:var(--px);font-size:10px;padding:2px}
 .card:has(.flag) .bot{padding-bottom:22px}                          /* keep the flag from covering the last line */
-.pc-HN,.pc-RS,.pc-SW{background:#5eb4f0}.pc-MD,.pc-WG{background:#58c98a}.pc-ST,.pc-DP{background:#e8604f}
+.pc-HN,.pc-PO{background:#5eb4f0}.pc-CT,.pc-WG{background:#58c98a}.pc-DP{background:#e8604f}
 
 .capbar{display:flex;align-items:center;gap:10px;margin-top:10px}
 .cap{flex:1;border:3px solid var(--white);border-radius:6px;background:var(--navy);padding:4px 8px}
@@ -454,12 +454,14 @@ function giveLook(p){
 const COLORS = [['#d9453b','#1f2a44'],['#2f6fe0','#ffd23f'],['#2f9e5b','#ffd23f'],['#7a4bd1','#ffd23f'],['#f08a24','#1b2233'],['#1f2a44','#e0584b'],['#12a3a3','#1f2a44'],['#b0304f','#ffd23f']];
 const SECONDARY = Object.fromEntries(COLORS);
 const AI_TEAMS = [['Portside','Pilots'],['Ridgeview','Rams'],['Lakeshore','Lynx'],['Mesa','Vipers'],['Northgate','Wolves'],['Bayview','Herons'],['Summit','Peaks'],['Ironwood','Bears'],['Coral Coast','Sharks'],['Pine Hollow','Owls'],['Redstone','Miners']];
-/* Five on the field (user), one roster spot each:
-     HN handler, RS reset    the two who stay near the disc and do most of the throwing
-     MD mid, WG wing         cut underneath for the short and middle throws
-     DP deep                 goes long and finishes in the end zone */
-const POS = ['HN','RS','MD','WG','DP'];
-const POS_NAME = { HN:'Handler', RS:'Reset', MD:'Mid', WG:'Wing', DP:'Deep' };
+/* Five on the field, one roster spot each (the user's roles):
+     HN handler   quarterback / point guard: the best thrower and catcher, stays near or behind the disc, runs the play
+     PO popper    plays close to the handler for quick give-and-go passes
+     CT cutter    wide receiver: downfield, sprints into open space to gain yards
+     WG wing      finds the openings at middle distance along the sidelines
+     DP deep      sprints down the field for the long throws */
+const POS = ['HN','PO','CT','WG','DP'];
+const POS_NAME = { HN:'Handler', PO:'Popper', CT:'Cutter', WG:'Wing', DP:'Deep' };
 // The league (user's list): 20 clubs in four divisions of five. [id, city, name, division, main color, second color]
 const DIVS = [['E', 'East'], ['C', 'Central'], ['S', 'South'], ['W', 'West']];
 const DIV_NAME = Object.fromEntries(DIVS);
@@ -474,8 +476,8 @@ const RATE = ['spd','sta','thr','cat','str'];
 const RATE_NAME = { spd:'Speed', sta:'Stamina', thr:'Throwing', cat:'Catching', str:'Strength' };
 const RATE_DESC = { spd:'70 yards in 12 seconds at 1, in 10 seconds at 10.', sta:'Slows down less the more he runs in a point.', thr:'Accuracy: a throw can miss by up to 7.5 yards at 1, 3 at 10.', cat:'Holds on to faster and harder throws, and picks off more.', str:'Longest throw: 35 yards at 1, 70 at 10. Faster throws too.' };
 const TILT = {
-  HN:{ spd:-1.5, sta:-.5, thr:2, cat:-.5, str:.5 }, RS:{ spd:-.5, sta:0, thr:1.5, cat:0, str:-1 },
-  MD:{ spd:.5, sta:1, thr:-.5, cat:.5, str:-1.5 }, WG:{ spd:1, sta:.5, thr:-1, cat:.5, str:-1 }, DP:{ spd:2, sta:-1, thr:-2, cat:1.5, str:-.5 },
+  HN:{ spd:-1.5, sta:-.5, thr:2, cat:.5, str:-.5 }, PO:{ spd:0, sta:0, thr:1, cat:1, str:-2 },
+  CT:{ spd:1.5, sta:.5, thr:-1.5, cat:.5, str:-1 }, WG:{ spd:.5, sta:1, thr:-.5, cat:.5, str:-1.5 }, DP:{ spd:2, sta:-1, thr:-2, cat:1.5, str:-.5 },
 };
 const SEASON_GAMES = 12;
 // TV money per game (amounts in millions). Star power for each player on the roster: 1-1.5 stars $10K, 2-2.5 $25K,
@@ -628,6 +630,12 @@ function addFA(pos){ G.fa.push(starPlayer(pos, pick([1.5, 2, 2, 2.5, 2.5, 3, 3, 
 function migrate(g){
   if (!g) return g;
   if (!g.v || g.v < 2) { try { localStorage.setItem(CACHE + '.legacy', JSON.stringify(g)); } catch {} return null; }
+  if (g.roster && g.roster.RS !== undefined) {                                        // positions renamed: Reset → Popper, Mid → Cutter
+    const map = { RS:'PO', MD:'CT' }, ren = p => { if (p && map[p.pos]) p.pos = map[p.pos]; };
+    for (const k in map) { g.roster[map[k]] = g.roster[k]; delete g.roster[k]; }
+    Object.values(g.roster).forEach(ren); (g.fa || []).forEach(ren); (g.league || []).forEach(t => (t.players || []).forEach(ren));
+    if (g.off && g.off.prospects) g.off.prospects.forEach(ren);
+  }
   const fix = p => {
     if (!p || typeof p.style === 'string') return;
     const n = parseInt((p.skin || '#c68a61').slice(1), 16), lum = ((n >> 16) + ((n >> 8) & 255) + (n & 255)) / 3;
@@ -703,9 +711,9 @@ function simPossession(off, def){
 }
 const teamPlayers = t => t.user ? rosterArr() : (t.players || []);
 const wPick = (arr, w) => { let x = Math.random() * arr.reduce((s, p) => s + w(p), 0); for (const p of arr) { x -= w(p); if (x <= 0) return p; } return arr[0]; };
-const THROW_W = { HN:3, RS:2.5, SW:2, MD:1, WG:1, ST:.6, DP:.5 };              // who does the throwing
-const CATCH_W = { HN:.8, RS:.8, SW:1, MD:1.6, WG:1.6, ST:1.8, DP:1.8 };        // who gets thrown to
-const GOAL_W = { HN:.3, RS:.4, SW:.6, MD:1.2, WG:1.4, ST:2.2, DP:2.6 };        // who catches the goals
+const THROW_W = { HN:3, PO:2, CT:1, WG:1, DP:.5 };                               // who does the throwing
+const CATCH_W = { HN:.8, PO:1.2, CT:1.6, WG:1.4, DP:1.8 };                        // who gets thrown to
+const GOAL_W = { HN:.3, PO:.6, CT:1.4, WG:1.4, DP:2.6 };                          // who catches the goals
 const thrower = pl => wPick(pl, p => THROW_W[p.pos] * (.5 + p.thr / 10));
 // hand out the last possession to players: sides are { pl, box (goals), pb (other stats) }; def may be null
 function creditPoss(off, def){
@@ -1598,10 +1606,10 @@ const WORLD_W = Math.ceil(X0 * 2 + FL * PXF);
 const cv = $('#court'), ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
 const courtCv = document.createElement('canvas'); courtCv.width = WORLD_W; courtCv.height = CH;
 /* The camera: zoomed in a third closer than the whole-height view (ZOOM), so about 42 yards of field show across the
-   screen and the view also slides up and down. It pulls back, as far as ZOOM_OUT, whenever that's needed to keep a
-   throw's whole distance on screen: while you aim a long one, and while a long one is in the air.
+   screen and the view also slides up and down. It pulls back whenever that's needed to keep a throw's whole distance
+   on screen: around the thrower while you aim (see draw), and between the disc and its landing spot while it flies.
    The canvas has SS real pixels per field pixel; SS x ZOOM / 2 is a whole number (4) so sprite pixels stay square. */
-const SS = 6, ZOOM = 4 / 3, ZOOM_OUT = .72;
+const SS = 6, ZOOM = 4 / 3, ZOOM_OUT = .72, ZOOM_AIM = .34;            // ZOOM_AIM: how far back it can go while you aim (the thrower doesn't move on screen, so a long throw needs more room)
 let cam = 0, camY = 0, zoom = ZOOM;
 const sx = x => X0 + x * PXF - cam, sy = (y, z = 0) => Y0 + y * PYF - z * PZF - camY;
 const FONT = {
@@ -2152,9 +2160,9 @@ function hud(){
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   $('#pU').className = 'poss' + (play && M.off === 'us' ? ' on' : ''); $('#pO').className = 'poss' + (play && M.off === 'them' ? ' on' : '');
   $('#shc').textContent = M.phase === 'live' ? Math.min(STALL, Math.floor(M.stall) + 1) : '';
-  const defending = play && M.off === 'them' && !M.auto;
+  const defending = USER_DEFENDS && play && M.off === 'them' && !M.auto;
   if (defending !== M.joyShown) { M.joyShown = defending; $('#joy').hidden = !defending; if (!defending) joyReset(); }
-  const hint = !play || M.auto ? '' : M.off === 'us' ? 'Drag back anywhere and let go to throw' : 'Stick: run your defender · tap a teammate to switch';
+  const hint = !play || M.auto ? '' : M.off === 'us' ? 'Drag back anywhere and let go to throw' : USER_DEFENDS ? 'Stick: run your defender · tap a teammate to switch' : 'Their disc: your defense is on it';
   if (hint !== M.hint) { M.hint = hint; tip(hint); }
 }
 function banner(text, small, ms = 1000, bigSub = false){
@@ -2189,24 +2197,32 @@ function moveTo(e, tx, ty, sp, dt){
   return d - s < .25;
 }
 
-/* ---- offense off the disc: everyone keeps cutting ----
-   Slots 0-1 are the handlers (HN, RS): they stay within a short throw of the disc, level with it or just behind.
-   Slots 2-3 (MD, WG) cut underneath, 8 to 30 yards downfield. Slot 4 (DP) goes deep, 16 to 52 yards.
-   Cutters alternate coming back to the disc and going away from it, so somebody is always arriving open. */
+/* ---- offense off the disc: five jobs, always moving, always looking for open grass (user, 2026-10-07) ----
+     HN handler   the quarterback / point guard: stays level with or behind the disc as the safe outlet
+     PO popper    close in front of the disc for quick give-and-go passes
+     CT cutter    the wide receiver: sprints into space 10 to 28 yards downfield, in and out
+     WG wing      sneaks into the gaps at middle distance down a sideline, switching sides now and then
+     DP deep      runs away downfield for the long one, 28 to 50 yards out
+   Nobody stands still: every second or so each of them picks the most open of a handful of spots his job allows
+   (the one farthest from any defender, like finding space in soccer) and runs there. */
 function refPoint(){ const h = holderEnt(); if (h) return h; const F = M.disc.fl; return F ? F.target : M.disc; }
+const ROLE_SPOT = [
+  (R, e) => ({ f:rnd(-8, 2), y:R.y + (Math.random() < .5 ? -1 : 1) * rnd(6, 15) }),
+  (R, e) => ({ f:rnd(4, 11), y:R.y + rnd(-11, 11) }),
+  (R, e) => ({ f:e.inCut ? rnd(10, 16) : rnd(18, 28), y:rnd(6, 34) }),
+  (R, e) => ({ f:rnd(12, 24), y:(e.wingTop = Math.random() < .25 ? !e.wingTop : e.wingTop) ? rnd(2, 8) : rnd(32, 38) }),
+  (R, e) => ({ f:e.inCut ? rnd(22, 30) : rnd(32, 50), y:rnd(6, 34) }),
+];
 function setCut(e, i, side){
-  const R = refPoint(), d = dirOf(side), mates = teamOf(side);
+  const R = refPoint(), d = dirOf(side), mates = teamOf(side), foes = teamOf(otherSide(side));
   let best = null;
-  for (let n = 0; n < 8; n++) {
-    let f, y;
-    if (i <= 1) { f = rnd(-5, 9); y = clamp(R.y + rnd(-17, 17), 3, 37); if (Math.abs(y - R.y) < 6 && Math.abs(f) < 6) y = clamp(R.y + (R.y < 20 ? 9 : -9), 3, 37); }
-    else if (i <= 3) { f = e.inCut ? rnd(8, 15) : rnd(18, 30); y = rnd(4, 36); }
-    else { f = e.inCut ? rnd(16, 26) : rnd(32, 52); y = rnd(5, 35); }
-    const p = { x:clamp(R.x + d * f, 3, FL - 3), y };
-    best = p;
-    if (mates.every(m => m === e || Math.hypot((m.tx ?? m.x) - p.x, (m.ty ?? m.y) - p.y) > 10)) break;
+  for (let n = 0; n < 7; n++) {
+    const c = ROLE_SPOT[Math.min(i, 4)](R, e), p = { x:clamp(R.x + d * c.f, 3, FL - 3), y:clamp(c.y, 2, FW - 2) };
+    const open = Math.min(...foes.map(f => dist(f, p))), crowd = Math.min(...mates.map(m => m === e ? 99 : Math.hypot((m.tx ?? m.x) - p.x, (m.ty ?? m.y) - p.y)));
+    const sc = Math.min(open, 12) + Math.min(crowd, 9) * .6 + rnd(0, 2);   // open grass first, then away from his own teammates
+    if (!best || sc > best.sc) best = { sc, p };
   }
-  e.inCut = !e.inCut; e.tx = best.x; e.ty = best.y; e.cutWait = rnd(.15, .8);
+  e.inCut = !e.inCut; e.tx = best.p.x; e.ty = best.p.y; e.cutWait = rnd(.05, .55);
 }
 function updateOffense(side, dt){
   const arr = teamOf(side), h = M.disc.holder, F = M.disc.fl;
@@ -2218,26 +2234,48 @@ function updateOffense(side, dt){
     if (M.phase === 'loose' && M.pick === i) { if (moveTo(e, M.disc.x, M.disc.y, speedOf(e), dt)) pickUp(side, i); return; }
     if (F && F.pull && M.pick === i) { moveTo(e, F.land.x, F.land.y, speedOf(e), dt); return; }   // fielding the pull
     if (F && M.chase && M.chase.off.includes(i) && F.thrower !== e) { moveTo(e, F.land.x, F.land.y, speedOf(e), dt); return; }   // going to get it
-    if (moveTo(e, e.tx, e.ty, speedOf(e) * .96, dt)) { e.cutWait -= dt; if (e.cutWait <= 0) setCut(e, i, side); }
+    if (moveTo(e, e.tx, e.ty, speedOf(e), dt)) { e.cutWait -= dt; if (e.cutWait <= 0) setCut(e, i, side); }
   });
 }
-/* ---- defense: man to man, a beat behind ----
-   Each defender re-reads his man every DEF_LAG seconds and stands on the side of him nearer the end zone he's
-   attacking. The thrower's defender marks him from 2.2 yards. When the disc goes up, the defender nearest to where
-   it's coming down goes for it. The one you control follows the joystick instead (and marks on his own when you let go). */
-const DEF_LAG = .45;
+/* ---- defense: a zone, not man to man (user, 2026-10-07: sticking to every player was too hard to beat) ----
+   Each defender owns a patch of field measured from the disc, not a man:
+     0  the mark: runs to the thrower and stands 2.4 yards off him, downfield side
+     1  short middle: about 8 yards past the disc (the poppers' space)
+     2  middle: about 19 yards past it
+     3  the wing: 15 yards past it, on whichever sideline their wing is working
+     4  deep: at least 26 yards past it, and always a few yards behind their deepest man
+   Inside his patch a defender only shades ZONE_TIGHT of the way toward the nearest attacker, so cutters come open by a
+   few yards the way players find space in soccer. He re-reads the play every DEF_LAG seconds.
+   A throw catches the defense looking: the offense goes for it at once, the defense takes DEF_REACT seconds to notice,
+   and then the defender nearest to where it's coming down breaks on it.
+   (If USER_DEFENDS is ever turned back on, the defender you control follows the joystick instead.) */
+const DEF_LAG = .45, DEF_REACT = .45, ZONE_TIGHT = .45;
+const USER_DEFENDS = false;                                           // the user asked not to play defense (2026-10-07): your team defends on its own; the joystick code stays for if that changes
+function zoneSpot(i, off){
+  const F = M.disc.fl, h = holderEnt(), R = F && !F.pull ? (F.t > DEF_REACT ? F.target : F.from) : h || (F ? F.target : M.disc);
+  const d = dirOf(off), men = teamOf(off), fwd = f => clamp(R.x + d * f, 1, FL - 1);
+  if (i === 0) return { x:fwd(2.4), y:R.y };
+  let base;
+  if (i === 1) base = { x:fwd(8), y:lerp(FW / 2, R.y, .7) };
+  else if (i === 2) base = { x:fwd(19), y:lerp(FW / 2, R.y, .4) };
+  else if (i === 3) base = { x:fwd(15), y:men[3] && men[3].y < FW / 2 ? 7 : FW - 7 };
+  else { const deepest = Math.max(...men.map(m => (m.x - R.x) * d)); base = { x:fwd(Math.max(26, deepest + 4)), y:lerp(FW / 2, men[4] ? men[4].y : FW / 2, .5) }; }
+  // shade toward the nearest attacker in the patch (never the man with the disc), without leaving it
+  let near = null, nd = 13;
+  men.forEach(m => { if (m === h) return; const dd = dist(m, base); if (dd < nd) { nd = dd; near = m; } });
+  if (near) base = { x:lerp(base.x, near.x + d * 1.2, ZONE_TIGHT), y:lerp(base.y, near.y, ZONE_TIGHT) };
+  return { x:clamp(base.x, 1, FL - 1), y:clamp(base.y, 1, FW - 1) };
+}
 function updateDefense(side, dt){
-  const arr = teamOf(side), off = otherSide(side), men = teamOf(off), d = dirOf(off), h = M.disc.holder, F = M.disc.fl;
+  const arr = teamOf(side), off = otherSide(side), F = M.disc.fl;
+  if (F && !F.pull && F.t > DEF_REACT && F.defChase == null) F.defChase = nearestIdx(arr, F.land);   // now they've seen it
   arr.forEach((e, i) => {
-    if (side === 'us' && !M.auto && i === M.ctrl && userMoves(e, dt)) return;
-    const man = men[i];
-    if (F && !F.pull && M.chase && M.chase.def === i && F.t > .2) { moveTo(e, F.land.x, F.land.y, speedOf(e), dt); return; }
+    if (USER_DEFENDS && side === 'us' && !M.auto && i === M.ctrl && userMoves(e, dt)) return;
+    if (F && !F.pull && F.defChase === i) { moveTo(e, F.land.x, F.land.y, speedOf(e), dt); return; }
     e.lagT -= dt;
-    if (e.lagT <= 0) { e.lagT = F ? DEF_LAG * .5 : DEF_LAG; e.lx = man.x; e.ly = man.y; }
-    const marking = h && h.side === off && h.i === i;
-    const gap = marking ? 2.2 : 1.3;
-    moveTo(e, clamp(e.lx + d * gap, 1, FL - 1), clamp(e.ly + (marking ? 0 : Math.sign(M.disc.y - e.ly) * .5), 1, FW - 1), speedOf(e) * .97, dt);
-    if (!e.moving) e.face = -d;
+    if (e.lagT <= 0) { e.lagT = DEF_LAG; const z = zoneSpot(i, off); e.lx = z.x; e.ly = z.y; }
+    moveTo(e, e.lx, e.ly, speedOf(e) * .95, dt);
+    if (!e.moving) e.face = -dirOf(off);
   });
 }
 // the joystick: your defender runs where you push it; for a moment after you let go he stays put, then marks again
@@ -2290,7 +2328,7 @@ function throwDisc(side, e, T, opts = {}){
   // who goes for it: the two teammates nearest where it's coming down, and the nearest defender
   const mates = teamOf(side), foes = teamOf(otherSide(side)), me = mates.indexOf(e);
   const order = mates.map((m, i) => ({ i, d:dist(m, A) })).filter(o => o.i !== me).sort((a, b) => a.d - b.d);
-  M.chase = opts.pull ? { off:[], def:-1 } : { off:order.slice(0, 2).map(o => o.i), def:nearestIdx(foes, A) };
+  M.chase = opts.pull ? { off:[] } : { off:order.slice(0, 2).map(o => o.i) };   // the defense picks its chaser once it has seen the throw (updateDefense)
   if (!opts.pull && order.length) M.disc.fl.meant = order[0].i;       // who it's meant for: the teammate nearest where it's coming down
   M.phase = opts.pull ? 'pull' : 'air'; M.stall = 0; M.aim = null;
   if (!opts.pull) M.st[side].att++;
@@ -2339,7 +2377,7 @@ function tryCatch({ e, side, i, dd }){
   else if (own) {
     const guarded = teamOf(otherSide(side)).some(o => dist(o, e) < 1.5);
     p = (.93 + .006 * e.p.cat) * sp * (far ? .85 : 1) * (high ? .9 : 1) * (guarded ? .93 : 1);
-  } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (side === 'us' && !M.auto && i === M.ctrl ? 2 : 1);
+  } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (USER_DEFENDS && side === 'us' && !M.auto && i === M.ctrl ? 2 : 1);
   e.poseT = .4; if (far) e.dive = .5; else if (high) e.z = .8;
   if (Math.random() >= p) {
     if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).tgt++; turnover({ x:d.x, y:d.y }, otherSide(side), side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }
@@ -2393,11 +2431,10 @@ function pickUp(side, i){
   M.disc.holder = { side, i }; e.moving = false; e.vx = e.vy = 0; M.phase = 'live'; M.stall = 0; M.think = rnd(.9, 1.6);
   afterCatch(side); hud();
 }
-// when they have it: you start on the defender nearest the disc who isn't the one marking the thrower
+// when they have it: you start on the defender nearest the disc who isn't the mark
 function pickCtrl(){
   if (M.off !== 'them') return;
-  const h = M.disc.holder, mark = h && h.side === 'them' ? h.i : (M.phase === 'loose' ? M.pick : -1);
-  const i = nearestIdx(M.our, M.disc, mark); if (i >= 0) M.ctrl = i;
+  const i = nearestIdx(M.our, M.disc, 0); if (i >= 0) M.ctrl = i;   // slot 0 is the mark
 }
 function goal(side, e, thrower){
   if (side === 'us') { M.us++; M.box[e.p.id] = (M.box[e.p.id] || 0) + 1; if (thrower) pbFor(M.pbox, thrower.p).ast++; }
@@ -2413,7 +2450,7 @@ function startPull(receiving){
   const ownLine = side => side === 'us' ? GOAL_L : GOAL_R;           // we defend the left end zone, they defend the right
   [...M.our, ...M.th].forEach(e => { e.slide = null; e.run = 0; e.z = 0; e.dive = 0; e.poseT = 0; e.manual = 0; e.cutWait = 0; e.vx = e.vy = 0; e.moving = false; });
   R.forEach((e, i) => { e.x = ownLine(receiving) + rd * rnd(3, 12); e.y = 5 + i * 7.5 + rnd(-1, 1); e.tx = e.x; e.ty = e.y; e.face = rd; });
-  P.forEach((e, i) => { e.x = ownLine(pulling); e.y = 5 + i * 7.5; e.tx = e.x; e.ty = e.y; e.face = -rd; e.lx = R[i].x; e.ly = R[i].y; e.lagT = 0; });
+  P.forEach((e, i) => { e.x = ownLine(pulling); e.y = 5 + i * 7.5; e.tx = e.x; e.ty = e.y; e.face = -rd; e.lx = e.x; e.ly = e.y; e.lagT = 0; });
   M.off = receiving; M.aim = null; M.stall = 0;
   const puller = P[0];
   M.disc.holder = { side:pulling, i:0 };
@@ -2437,7 +2474,7 @@ function aiThrow(side, dt){
     const D0 = dist(e, m), lead = flightTime(D0, e.p.str) * .85;
     const P = { x:clamp(m.x + (m.vx || 0) * lead, 2, FL - 2), y:clamp(m.y + (m.vy || 0) * lead, 2, FW - 2) }, D = dist(e, P);
     if (D < 5 || D > R) return;
-    const open = Math.min(...foes.map((f, k) => k === h.i ? 99 : dist(f, P)));
+    const open = Math.min(...foes.map((f, k) => k === 0 ? 99 : dist(f, P)));   // everyone but the mark
     const gain = (P.x - e.x) * d;
     const sc = gain * .55 + Math.min(open, 8) * 2.4 - Math.max(0, D - 30) * .35 + rnd(0, 6) + (inGoal(P, side) ? 8 : 0);
     if (!best || sc > best.sc) best = { sc, P, open };
@@ -2543,7 +2580,7 @@ cv.addEventListener('pointerdown', ev => {
   if (M.off === 'us' && !M.auto && M.phase === 'live' && holderEnt()) {
     ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch {}
     M.aim = { x0:pt.x, y0:pt.y, cx:pt.x, cy:pt.y, id:ev.pointerId };
-  } else if (M.off === 'them' && ['live', 'air', 'loose', 'pull'].includes(M.phase)) {
+  } else if (USER_DEFENDS && M.off === 'them' && ['live', 'air', 'loose', 'pull'].includes(M.phase)) {
     let best = -1, bd = 16;
     M.our.forEach((e, i) => { const d = Math.hypot(sx(e.x) - pt.x / zoom, sy(e.y) - 6 - pt.y / zoom) * zoom; if (d < bd) { bd = d; best = i; } });   // the tap is in screen pixels, the players in zoomed ones
     if (best >= 0) { M.ctrl = best; M.our[best].manual = 0; }
@@ -2593,30 +2630,49 @@ function drawAim(){
 function draw(){
   if (!M) return;
   const D = M.disc, T = aimTarget(), h = holderEnt(), F = D.fl;
-  // what has to be on screen: the thrower and where he's aiming, or the disc and where it's coming down
-  const a = T && h ? h : D, b = T && h ? T : F ? F.land : null;
-  let want = ZOOM;
-  if (b) {
-    const spanX = Math.abs(b.x - a.x) * PXF + 70, spanY = Math.abs(b.y - a.y) * PYF + 56;   // with room around both ends
-    want = clamp(Math.min(ZOOM, CW / spanX, CH / spanY), ZOOM_OUT, ZOOM);
+  let VW, VH;
+  if (M.aim && h) {
+    /* Aiming: the thrower is pinned to the spot on the screen where he was when the drag began, and the view zooms out
+       around him just far enough to show where the throw would land. Nothing slides under the finger, so pulling back
+       always means farther and easing off always means shorter. */
+    const A = M.aim;
+    if (A.px == null) { A.px = (X0 + h.x * PXF - cam) * zoom; A.py = (Y0 + h.y * PYF - camY) * zoom; }
+    let want = ZOOM;
+    if (T) {
+      const dx = (T.x - h.x) * PXF, dy = (T.y - h.y) * PYF, m = 24;   // the landing spot stays this far inside the edge
+      if (dx > 1) want = Math.min(want, Math.max(40, CW - m - A.px) / dx); else if (dx < -1) want = Math.min(want, Math.max(40, A.px - m) / -dx);
+      if (dy > 1) want = Math.min(want, Math.max(30, CH - m - A.py) / dy); else if (dy < -1) want = Math.min(want, Math.max(30, A.py - m - 22) / -dy);   // 22: the scoreboard
+    }
+    want = clamp(want, ZOOM_AIM, ZOOM);
+    zoom = lerp(zoom, want, want < zoom ? .2 : .1);
+    if (Math.abs(zoom - want) < .002) zoom = want;
+    VW = CW / zoom; VH = CH / zoom;
+    cam = X0 + h.x * PXF - A.px / zoom; camY = Y0 + h.y * PYF - A.py / zoom;
+  } else {
+    // otherwise: follow the disc, and while it's in the air keep it and where it's coming down both on screen
+    const b = F ? F.land : null;
+    let want = ZOOM;
+    if (b) {
+      const spanX = Math.abs(b.x - D.x) * PXF + 70, spanY = Math.abs(b.y - D.y) * PYF + 56;   // with room around both ends
+      want = clamp(Math.min(ZOOM, CW / spanX, CH / spanY), ZOOM_OUT, ZOOM);
+    }
+    zoom = lerp(zoom, want, want < zoom ? .14 : .06);                  // out quickly, back in gently
+    if (Math.abs(zoom - want) < .002) zoom = want;
+    VW = CW / zoom; VH = CH / zoom;
+    const fx = b ? (D.x + b.x) / 2 : D.x + (h ? dirOf(M.off) * 4 : 0), fy = b ? (D.y + b.y) / 2 : D.y;
+    const tx = VW >= WORLD_W ? (WORLD_W - VW) / 2 : clamp(X0 + fx * PXF - VW / 2, 0, WORLD_W - VW);
+    const ty = VH >= CH ? (CH - VH) / 2 : clamp(Y0 + fy * PYF - 10 - VH * .58, 0, CH - VH);   // a little low of center, so the scoreboard covers less of the play
+    cam = lerp(cam, tx, .12); camY = lerp(camY, ty, .12);
+    cam = Math.round(cam * 100) / 100; camY = Math.round(camY * 100) / 100;
   }
-  zoom = lerp(zoom, want, want < zoom ? .14 : .06);                    // out quickly, back in gently
-  if (Math.abs(zoom - want) < .002) zoom = want;
-  const VW = CW / zoom, VH = CH / zoom;
-  // the thrower stays near the middle; while you aim, and while it flies, the view centers between the two ends
-  const fx = b ? (a.x + b.x) / 2 : D.x + (h ? dirOf(M.off) * 4 : 0), fy = b ? (a.y + b.y) / 2 : D.y;
-  const tx = VW >= WORLD_W ? (WORLD_W - VW) / 2 : clamp(X0 + fx * PXF - VW / 2, 0, WORLD_W - VW);
-  const ty = VH >= CH ? (CH - VH) / 2 : clamp(Y0 + fy * PYF - 10 - VH * .58, 0, CH - VH);   // a little low of center, so the scoreboard covers less of the play
-  cam = lerp(cam, tx, .12); camY = lerp(camY, ty, .12);
-  cam = Math.round(cam * 100) / 100; camY = Math.round(camY * 100) / 100;
   ctx.setTransform(SS * zoom, 0, 0, SS * zoom, 0, 0); ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = '#16204a'; ctx.fillRect(0, 0, VW, VH / 2); ctx.fillStyle = '#2f7d3a'; ctx.fillRect(0, VH / 2, VW, VH / 2 + 1);   // beyond the stands and the grass when pulled right back
+  ctx.fillStyle = '#16204a'; ctx.fillRect(0, 0, VW, VH); ctx.fillStyle = '#2f7d3a'; ctx.fillRect(0, Y0 - camY, VW, VH);   // beyond the stands and past the grass when pulled right back
   if (M.shake > 0) { const k = M.shake / .2; ctx.translate(Math.round((Math.random() - .5) * 3 * k), Math.round((Math.random() - .5) * 2 * k)); }
   ctx.drawImage(courtCv, 0, 0, WORLD_W, CH, -cam, -camY, WORLD_W, CH);
   if (M.pop > 0) for (let i = 0; i < 5; i++) { const px = Math.floor(Math.random() * VW), py = 3 + Math.floor(Math.random() * Math.max(4, Y0 - 22 - camY)); ctx.fillStyle = '#ffffff'; ctx.fillRect(px, py - 1, 1, 3); ctx.fillRect(px - 1, py, 3, 1); }
   const play = ['live', 'air', 'loose', 'pull'].includes(M.phase);
   const ents = [
-    ...M.our.map((e, i) => ({ y:e.y, f:() => drawPlayer(e, M.uni.us, play && !M.auto && ((M.off === 'us' && h === e) || (M.off === 'them' && i === M.ctrl)) ? '#ffd23f' : null) })),
+    ...M.our.map((e, i) => ({ y:e.y, f:() => drawPlayer(e, M.uni.us, play && !M.auto && ((M.off === 'us' && h === e) || (USER_DEFENDS && M.off === 'them' && i === M.ctrl)) ? '#ffd23f' : null) })),
     ...M.th.map(e => ({ y:e.y, f:() => drawPlayer(e, M.uni.them, null) })),
     { y:-2, f:() => { drawBench('us'); drawBench('them'); } },
     { y:D.y + (h ? .1 : 0), f:drawDisc },
