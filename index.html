@@ -625,6 +625,11 @@ function addFA(pos){ G.fa.push(starPlayer(pos, pick([1.5, 2, 2, 2.5, 2.5, 3, 3, 
 function migrate(g){
   if (!g) return g;
   if (!g.v || g.v < 2) { try { localStorage.setItem(CACHE + '.legacy', JSON.stringify(g)); } catch {} return null; }
+  // stat lines from before targets were counted have catches with no (or too few) targets, which showed as over 100%:
+  // give them the targets they must have had, at the league's usual 90% catch rate
+  const fixLine = o => { if (o && (o.rec || 0) > (o.tgt || 0)) o.tgt = Math.ceil(o.rec / .9); };
+  const fixP = p => { if (p) { fixLine(p.s); fixLine(p.c); } };
+  Object.values(g.roster || {}).forEach(fixP); (g.fa || []).forEach(fixP); (g.league || []).forEach(t => (t.players || []).forEach(fixP));
   if (g.roster && g.roster.RS !== undefined) {                                        // positions renamed: Reset → Popper, Mid → Cutter
     const map = { RS:'PO', MD:'CT' }, ren = p => { if (p && map[p.pos]) p.pos = map[p.pos]; };
     for (const k in map) { g.roster[map[k]] = g.roster[k]; delete g.roster[k]; }
@@ -736,11 +741,12 @@ function addStats(players, box, pb){
   }
 }
 // the other team in a game you played live: build a believable box score that adds up to their final score
-function fakeBox(players, score){
+function fakeBox(players, score, st = null, ours = null){
   const box = {}, pb = {}, side = { pl:players, box, pb };
+  const lost = st ? st.to : ri(4, 8), thrownPicks = ours ? ours.d : Math.round(lost * .35), picks = st ? st.d : ri(1, 4);   // st / ours: the two teams' real numbers from the game
   for (let g = 0; g < score; g++) { lastPoss = { cmp:ri(2, 6), to:false, d:false, goal:true }; creditPoss(side, null); }
-  for (let i = ri(4, 8); i > 0; i--) { lastPoss = { cmp:ri(0, 3), to:true, d:Math.random() < .35, goal:false }; creditPoss(side, null); }
-  for (let i = ri(1, 4); i > 0; i--) pbFor(pb, wPick(players, p => p.spd + p.cat)).d++;
+  for (let i = 0; i < lost; i++) { lastPoss = { cmp:ri(0, 3), to:true, d:i < thrownPicks, goal:false }; creditPoss(side, null); }
+  for (let i = 0; i < picks; i++) pbFor(pb, wPick(players, p => p.spd + p.cat)).d++;
   addStats(players, box, pb);
 }
 /* Every game is first to 3, 4 or 5 goals (user): no clock. The length is picked before the game and every simulated
@@ -1164,7 +1170,7 @@ function rosterHTML(){
 function statLine(o){
   o = o || {};
   const n = k => o[k] || 0;
-  return `<td class="num">${n('gp')}</td><td class="num">${n('pts')}</td><td class="num">${n('ast')}</td><td class="num">${n('tgt') ? (n('rec') / n('tgt') * 100).toFixed(1) + '%' : '–'}</td><td class="num">${n('rec')}</td><td class="num">${n('d')}</td><td class="num">${n('to')}</td>`;
+  return `<td class="num">${n('gp')}</td><td class="num">${n('pts')}</td><td class="num">${n('ast')}</td><td class="num">${n('tgt') ? (Math.min(1, n('rec') / n('tgt')) * 100).toFixed(1) + '%' : '–'}</td><td class="num">${n('rec')}</td><td class="num">${n('d')}</td><td class="num">${n('to')}</td>`;
 }
 function playerHTML(){
   const p = G.roster[sel]; if (!p) { screen = 'roster'; return rosterHTML(); }
@@ -1224,7 +1230,7 @@ const LCOLS = [
   { k:'gp', h:'GP', v:o => o.gp || 0, f:v => v },
   { k:'ppg', h:'GOALS', v:o => o.pts || 0, f:v => v },
   { k:'apg', h:'AST', v:o => o.ast || 0, f:v => v },
-  { k:'cmp', h:'CMP%', v:o => o.tgt ? o.rec / o.tgt : null, f:v => (v * 100).toFixed(1) },
+  { k:'cmp', h:'CMP%', v:o => o.tgt ? Math.min(1, o.rec / o.tgt) : null, f:v => (v * 100).toFixed(1) },
   { k:'rec', h:'CATCH', v:o => o.rec || 0, f:v => v },
   { k:'dpg', h:'INT', v:o => o.d || 0, f:v => v },
   { k:'tov', h:'TO', v:o => o.gp ? o.to || 0 : null, f:v => v },
@@ -2254,7 +2260,7 @@ const DEF_LAG = .5;
    chases it at full pace and holds on to more of what it reaches. That, and the computer's aim, is how the game is
    kept winnable for a new one-star team. tight: how far he leans to an attacker within `near` yards; react: seconds
    before he notices a throw; chase: share of his pace going for it; pick: multiplier on his interception chance. */
-const ZONE = { them:{ tight:.15, near:8, react:.6, chase:.9, pick:1 }, us:{ tight:.5, near:11, react:.3, chase:1, pick:1.7 } };
+const ZONE = { them:{ tight:.15, near:8, react:.6, chase:.9, pick:1 }, us:{ tight:.5, near:11, react:.3, chase:1, pick:3.6 } };   // pick 3.6 (was 1.7): the user's team had 10 interceptions when the league averaged 23
 function zoneSpot(i, off){
   const Z = ZONE[otherSide(off)];
   const F = M.disc.fl, h = holderEnt(), R = F && !F.pull ? (F.t > Z.react ? F.target : F.from) : h || (F ? F.target : M.disc);
@@ -2547,7 +2553,7 @@ function finishLive(id){
   const done = M; M = null;
   cancelAnimationFrame(raf); closeSheet();
   $('#game').hidden = true; $('#ui').hidden = false;
-  const opp = teamById(done.opp.id); if (opp) fakeBox(teamPlayers(opp), done.them);
+  const opp = teamById(done.opp.id); if (opp) fakeBox(teamPlayers(opp), done.them, done.st.them, done.st.us);
   endMatch(done, done.us, done.them, done.box, done.pbox);
 }
 function simRest(){
