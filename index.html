@@ -427,6 +427,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 // amounts are in millions; under $1M shows in thousands ($960K)
 const money = m => { const a = Math.abs(m), s = m < 0 ? '-' : '';
   if (a === 0) return '$0';
+  if (a * 1000 < 9.95) return `${s}$${(a * 1000).toFixed(1).replace(/\.0$/, '')}K`;
   if (Math.round(a * 1000) < 1000) return `${s}$${Math.round(a * 1000)}K`;
   return s + '$' + (a >= 10 ? Math.round(a) : a.toFixed(1).replace(/\.0$/, '')) + 'M'; };
 
@@ -474,46 +475,40 @@ const TILT = {
   CT:{ spd:1.5, sta:.5, thr:-1.5, cat:.5, str:-1 }, WG:{ spd:.5, sta:1, thr:-.5, cat:.5, str:-1.5 }, DP:{ spd:2, sta:-1, thr:-2, cat:1.5, str:-.5 },
 };
 const SEASON_GAMES = 12;
-// TV money per game (amounts in millions). Star power for each player on the roster: 1-1.5 stars $10K, 2-2.5 $25K,
-// 3-3.5 $50K, 4-4.5 $100K, 5 stars $250K.
-//   HOME: local TV $30K per 1% of fans + star power         (fans watch their team at home)
-//   AWAY: national TV $3K per 1% of fans + star power x 1.5 (national TV picks up star teams on the road)
-// So lots of fans pays mostly at home; star power pays everywhere and a little extra on the road.
-const TV_HOME_PER_FAN = .03, TV_AWAY_PER_FAN = .003, TV_AWAY_STARS = 1.5, TV_STAR = [0, .01, .025, .05, .1, .25];
-const tvStarsFor = p => TV_STAR[Math.floor(pStars(p))] || 0;
-const tvDeal = home => {
-  const f = Math.round(G.fans), star = rosterArr().reduce((s, p) => s + tvStarsFor(p), 0);
-  const fans = f * (home ? TV_HOME_PER_FAN : TV_AWAY_PER_FAN), stars = star * (home ? 1 : TV_AWAY_STARS);
-  return { fans, stars, total:fans + stars };
-};
-/* Front office upgrades (user, 2026-10-05: only the Arena felt useful, so the other three were replaced):
-     arena         more seats: pays when the building sells out
-     amenities     "Food & Parking": every fan in the building spends more, so it pays at any crowd
-     marketing     wins bring more fans, losses cost fewer
-     recruiting    players ask for less: each level drops the bottom of the asking range 10%, the top stays (user spec) */
-const foodPer = (lv = G.fac.amenities) => 18 + 10 * (lv - 1);          // $ of food per fan: 18 / 28 / 38 / 48 / 58
-const parkPer = (lv = G.fac.amenities) => 40 + 12.5 * (lv - 1);        // $ per car: 40 / 52.50 / 65 / 77.50 / 90
-const fanSpend = (lv = G.fac.amenities) => foodPer(lv) + parkPer(lv) / FANS_PER_CAR;   // food + parking per fan: 34 / 49 / 64 / 79 / 94 (user, 2026-10-05: +$51 a level made a 14-0 season worth $62M)
+/* Money (user's model, 2026-10-08; every amount in the code is in millions, so .025 is $25K). A small club:
+     ARENA           bleachers of 500 / 750 / 1,250 / 2,000 seats
+     TICKETS         $20 to $150. At $150 the share of seats sold equals your fans %; every dollar under that sells
+                     another 0.27% of the seats (15% fans: 15% full at $150, half full at $20; 100% fans sells out at $150)
+     FOOD + PARKING  each fan at a home game spends $15 / 20 / 25 / 40 on food and $10 / 15 / 25 / 50 on parking
+     SPONSORING      sponsors pay $25 / 40 / 65 / 90 for every fan in the building, at home AND away
+     MARKETING       wins bring more fans, losses cost fewer
+   There is no TV money. Four levels of each, so three upgrades, priced so a good first three seasons (or a slower
+   five) pays for all of them. */
+const SEATS = [500, 750, 1250, 2000], FOOD = [15, 20, 25, 40], PARK = [10, 15, 25, 50], SPONSOR = [25, 40, 65, 90];
+const lvOf = (k, lv) => clamp(lv ?? G.fac[k] ?? 1, 1, 4) - 1;
+const seats = lv => SEATS[lvOf('arena', lv)];
+const foodPer = lv => FOOD[lvOf('amenities', lv)], parkPer = lv => PARK[lvOf('amenities', lv)];
+const fanSpend = lv => foodPer(lv) + parkPer(lv);                       // food + parking per fan: 25 / 35 / 50 / 90
+const sponsorPer = lv => SPONSOR[lvOf('sponsor', lv)];
 const MKT_WIN = .15, MKT_LOSS = .1;                                    // per Marketing level above 1: wins +15% fans, losses -10%
-const ASK_LO = .85, ASK_HI = 1.15, ASK_DROP = .9;                      // asking price: 85-115% of the star rate; Recruiting lowers the 85% end by 10% a level
+const ASK_LO = .85, ASK_HI = 1.15;                                     // each player asks 85-115% of the going rate for his stars
 const DRAFT_ERR = 1;                                                   // draft ratings are shown within ±1 (scouting is gone)
 const FAC = {
-  arena:{ name:'Arena', short:lv => seats(lv).toLocaleString() + ' seats', desc:lv => `${seats(lv).toLocaleString()} seats.` },
-  amenities:{ name:'Food + Parking', short:lv => '$' + Math.round(fanSpend(lv)) + ' a fan', desc:lv => `Each fan spends $${Math.round(fanSpend(lv))} on food and parking${lv < FAC_MAX ? ` (next level $${Math.round(fanSpend(lv + 1))})` : ''}.` },
+  arena:{ name:'Arena', short:lv => seats(lv).toLocaleString() + ' seats', desc:lv => `${seats(lv).toLocaleString()} seats${lv < FAC_MAX ? ` (next ${seats(lv + 1).toLocaleString()})` : ''}.` },
+  amenities:{ name:'Food + Parking', short:lv => '$' + fanSpend(lv) + ' a fan', desc:lv => `Each fan at a home game spends $${foodPer(lv)} on food and $${parkPer(lv)} on parking${lv < FAC_MAX ? ` (next $${fanSpend(lv + 1)} in all)` : ''}.` },
   marketing:{ name:'Marketing', short:lv => '+' + Math.round((lv - 1) * MKT_WIN * 100) + '% fans per win', desc:lv => lv > 1 ? `Wins bring ${Math.round((lv - 1) * MKT_WIN * 100)}% more fans, losses cost ${Math.round((lv - 1) * MKT_LOSS * 100)}% fewer.` : 'Wins bring more fans, losses cost fewer.' },
-  recruiting:{ name:'Recruiting', short:lv => lv > 1 ? 'asks from -' + Math.round((1 - Math.pow(ASK_DROP, lv - 1)) * 100) + '%' : 'players ask less',
-    desc:lv => lv > 1 ? `Players can ask up to ${Math.round((1 - Math.pow(ASK_DROP, lv - 1)) * 100)}% under the normal low price. It is still luck: the top of the range stays.` : 'Each level lowers the least a player may ask by 10%. Still luck: the top of the range stays.' },
+  sponsor:{ name:'Sponsoring', short:lv => '$' + sponsorPer(lv) + ' a fan, home + away', desc:lv => `Sponsors pay $${sponsorPer(lv)} for every fan in the building, at your games and on the road${lv < FAC_MAX ? ` (next $${sponsorPer(lv + 1)})` : ''}.` },
 };
-// what each upgrade costs, $M (the user's prices, 2026-10-05): four upgrades each, so levels run 1-5
+// what each upgrade costs, $M: three upgrades each (levels 1-4). All twelve come to about $2.4M; the aim (user) is to
+// have everything at level 4 around a good manager's third season, or a struggling one's fifth.
 const FAC_PRICE = {
-  arena:[1.5, 3, 4.5, 6],
-  amenities:[.5, 1, 1.5, 3],
-  marketing:[1, 2, 3.5, 5],
-  recruiting:[1, 2, 3.5, 5],
+  arena:[.08, .28, .7],
+  amenities:[.025, .08, .28],
+  marketing:[.03, .08, .2],
+  sponsor:[.055, .2, .4],
 };
-const FAC_MAX = 5;
+const FAC_MAX = 4;
 const facCost = (k, lv = G.fac[k]) => FAC_PRICE[k][lv - 1];
-const seats = lv => 6000 + 3000 * (lv - 1);
 
 /* ============================ players ============================ */
 const pAvg = p => RATE.reduce((s, k) => s + p[k], 0) / RATE.length;
@@ -542,12 +537,14 @@ function makePlayer(pos, target, age = ri(20, 32)){
   return p;
 }
 // re-signing your own player costs at least 20% more than his old deal, or his market price if that's higher
-function resignPrice(p){ return Math.max(askSalary(p), Math.round(p.sal * 1.2 * 20) / 20); }
-// priced by stars: about $1M at 1 star, $3.5M at 2, $7.5M at 3, $13M at 4, $21M at 5 (20% less at 32+)
-// each player has his own price: 85-115% of the star rate, rolled once and kept (p.askMul). Recruiting stretches the
-// range downward: the 85% end drops 10% a level (85 → 76.5 → 69 → 62 → 56%) and every roll keeps its place in the range.
-const askMulNow = p => { const lv = (G && G.fac && G.fac.recruiting) || 1, u = clamp((p.askMul - ASK_LO) / (ASK_HI - ASK_LO), 0, 1); return lerp(ASK_LO * Math.pow(ASK_DROP, lv - 1), ASK_HI, u); };
-function askSalary(p){ const a = 1.5 + 1.4 * clamp(starsSmooth(p), 0, 5); p.askMul ??= ASK_LO + Math.random() * (ASK_HI - ASK_LO); return Math.max(1, Math.round(Math.pow(a / 10, 2.6) * 32 * askMulNow(p) * (p.age >= 32 ? .8 : 1) * 10) / 10); }   // to the nearest $100K, so each Recruiting level shows
+function resignPrice(p){ return Math.max(askSalary(p), Math.round(p.sal * 1.2 * 1000) / 1000); }
+// Pay by stars (user): a beginner makes about $25K a season and the best about $550K; in between it climbs faster
+// near the top: 1 star $25K, 2 $82K, 3 $198K, 4 $356K, 5 $550K. Each player asks 85-115% of that, rolled once and
+// kept (p.askMul), and 20% less from age 32. To the nearest $1K.
+const SAL_LO = .025, SAL_HI = .55;
+const starPay = st => st < 1 ? SAL_LO * (.6 + .4 * Math.max(0, st)) : SAL_LO + (SAL_HI - SAL_LO) * Math.pow((Math.min(st, 5) - 1) / 4, 1.6);
+function askSalary(p){ p.askMul ??= ASK_LO + Math.random() * (ASK_HI - ASK_LO); return Math.max(.01, Math.round(starPay(starsSmooth(p)) * p.askMul * (p.age >= 32 ? .8 : 1) * 1000) / 1000); }
+const halfPay = p => Math.max(.01, Math.round(askSalary(p) * 500) / 1000);   // a draft pick signs for half his asking price
 const potStars = p => starsFromTotal(Math.round(p.pot * 4));
 // contract length by age, rolled once per player: 24 and under 3-4 years, 25-29 2-3, 30 and up 2
 const askYears = p => {
@@ -603,13 +600,13 @@ function newGame(pickAbbr){
   for (const t of league) { if (t.user) continue; const lv = rnd(1.5, 3.1) + (Math.random() < .15 ? 1 : 0); t.players = POS.map(pos => starPlayer(pos, Math.round((lv + rnd(-1, 1)) * 2) / 2)); }
   const roster = {};
   for (const pos of POS) {
-    const p = makePlayer(pos, starsTarget(2) + rnd(-.2, .2), ri(21, 30)); p.sal = 1; p.yrs = ri(1, 2); roster[pos] = p;
+    const p = makePlayer(pos, starsTarget(2) + rnd(-.2, .2), ri(21, 30)); p.sal = SAL_LO; p.yrs = ri(1, 2); roster[pos] = p;
     // your five start at exactly 2 stars (user, 2026-10-07; it was 1 star): nudge the best or worst rating until he's in the 2-star band
     for (let g = 0; pStars(p) !== 2 && g < 40; g++) { const up = pStars(p) < 2, k = RATE.reduce((a, b) => (up ? p[a] <= p[b] : p[a] >= p[b]) ? a : b); p[k] = clamp(p[k] + (up ? 1 : -1), 1, 10); }
   }
   const used = new Set(); for (const pos of POS) { const p = roster[pos]; while (used.has(p.num)) p.num = ri(0, 55); used.add(p.num); }
-  G = { v:2, season:1, week:0, phase:'regular', cash:2, credits:4, fans:25, boosts:[], gpSeason:0, cap:CAP_START, ticket:TICKET_FAIR, target:5,
-    fac:{ arena:1, amenities:1, marketing:1, recruiting:1 }, roster, league, schedule:confSchedule(league), results:[],
+  G = { v:2, season:1, week:0, econ:2, phase:'regular', cash:.025, credits:4, fans:25, boosts:[], gpSeason:0, ticket:TICKET_START, target:5,
+    fac:{ arena:1, amenities:1, marketing:1, sponsor:1 }, roster, league, schedule:confSchedule(league), results:[],
     fa:[], pool:[], history:[], playoffs:null, off:null, last:null, kit:{ j:'home', s:'home' }, fin:{ gate:0, tv:0, bonus:0, spend:0, salaries:0 } };
   refillFA(FA_SIZE);
 }
@@ -649,8 +646,17 @@ function migrate(g){
   if (g.fac) for (const k in g.fac) g.fac[k] = Math.min(g.fac[k], 5);                // levels briefly went to 6
   if (g.fans == null) { g.fans = g.hype ?? 25; delete g.hype; }                // hype became fans
   g.boosts ||= []; g.gpSeason ??= 0; g.fans = Math.max(g.fans, 15);
-  if (g.ticket < TICKET_MIN) g.ticket = TICKET_FAIR;                               // tickets moved to $100-800
-  g.cap ??= CAP_MAX;                                                               // older saves keep the full cap
+  if (g.econ !== 2) {                                                              // a save from before the small-club money model: convert it once
+    g.econ = 2;
+    const o = g.fac || {}, lv = v => clamp(v || 1, 1, 4);
+    g.fac = { arena:lv(o.arena), amenities:lv(o.amenities), marketing:lv(o.marketing), sponsor:lv(o.sponsor || o.recruiting) };
+    Object.values(g.roster || {}).forEach(p => { if (p) p.sal = Math.max(.01, Math.round(askSalary(p) * 600) / 1000); });   // your own players keep a discount on their current deals
+    (g.fa || []).forEach(p => { p.sal = askSalary(p); }); (g.league || []).forEach(t => (t.players || []).forEach(p => { p.sal = askSalary(p); }));
+    if (g.off && g.off.prospects) g.off.prospects.forEach(p => { p.sal = halfPay(p); });
+    g.cash = clamp((g.cash || 0) * .0125, .01, .1);
+    g.fin = { gate:0, tv:0, bonus:0, spend:0, salaries:0 }; g.last = null;
+  }
+  g.ticket = clamp(g.ticket || TICKET_START, TICKET_MIN, TICKET_MAX);
   if (g.fac && g.fac.amenities == null) {                                          // 2026-10-05: Training Center → Food & Parking, Scouting → Marketing; levels carry over
     const o = g.fac; g.fac = { arena:o.arena || 1, amenities:o.training || 1, marketing:o.scouting || 1, recruiting:Math.max(o.conditioning || 1, o.training || 1) };
   }
@@ -773,18 +779,22 @@ const ROUND_SHORT = { 'Division semifinal':'DIV SEMI', 'Division final':'DIV FIN
 const ROUND_NAME = ['Division semifinal', 'Division final', 'Semifinal', 'The Final'];
 
 /* ============================ after a game ============================ */
-// Home games: fans fill the arena; every $100 over a $150 ticket keeps about 14% of seats empty.
-// Each fan in the building also buys food, and every 2.5 fans park one car; how much they spend is the Food & Parking level.
-const TICKET_MIN = 100, TICKET_MAX = 800, TICKET_FAIR = 150, FANS_PER_CAR = 2.5;
-const attendance = () => clamp(G.fans / 100 - (G.ticket - TICKET_FAIR) / 700, 0, 1);   // 50% fans = 50% full at a fair price; overpricing can empty it
+const TICKET_MIN = 20, TICKET_MAX = 150, TICKET_START = 100, CHEAP_SEATS = .35;   // CHEAP_SEATS: the extra share of the seats a $20 ticket sells over a $150 one
+const attAt = (fansPct, ticket) => clamp(fansPct / 100 + CHEAP_SEATS * (TICKET_MAX - ticket) / (TICKET_MAX - TICKET_MIN), 0, 1);
+const attendance = () => attAt(G.fans, G.ticket);
 function homeGate(){
-  const att = attendance(), crowd = Math.round(seats(G.fac.arena) * att);
-  const tickets = crowd * G.ticket / 1e6, food = crowd * foodPer() / 1e6, parking = Math.round(crowd / FANS_PER_CAR) * parkPer() / 1e6;
-  return { att, crowd, tickets, food, parking, total:tickets + food + parking };
+  const att = attendance(), crowd = Math.round(seats() * att);
+  const tickets = crowd * G.ticket / 1e6, food = crowd * foodPer() / 1e6, parking = crowd * parkPer() / 1e6, sponsor = crowd * sponsorPer() / 1e6;
+  return { att, crowd, tickets, food, parking, sponsor, total:tickets + food + parking + sponsor };
 }
-// salary cap: $20M to start, +$10M per 25 credits, up to $70M
-const CAP_START = 20, CAP_MAX = 70, CAP_STEP = 10, CAP_COST = 25;
-const capNow = () => G.cap || CAP_START;
+// on the road: the other club's bleachers go by how good it is (500 seats under 2 stars up to 2,000 at 4 and over), filled
+// 40% to 100% by its record. Your sponsors pay for every fan there too.
+function awayCrowd(opp){
+  const st = teamR(opp).stars, size = SEATS[st < 2 ? 0 : st < 3 ? 1 : st < 4 ? 2 : 3], gp = opp.w + opp.l;
+  const fill = clamp(.4 + (gp ? opp.w / gp : .5) * .6, .4, 1), crowd = Math.round(size * fill);
+  return { att:fill, crowd, tickets:0, food:0, parking:0, sponsor:crowd * sponsorPer() / 1e6, total:crowd * sponsorPer() / 1e6 };
+}
+// There is no salary cap (user): you can sign anyone whose signing bonus you have the cash for, and then you have to pay him every game.
 // training a stat doubles each time: 2, 4, 8, 16, 32 CR... (p.tr counts points trained per stat), so one bad player
 // can't cheaply be turned into an elite shooter
 const trainCost = (p, k) => 2 * Math.pow(2, (p.tr || {})[k] || 0);
@@ -794,8 +804,8 @@ const gameCredits = () => 2 + Math.floor(Math.min(G.fans, 99.9) / 20);
 const PAY_GAMES = 16;
 const perGame = p => p.sal / PAY_GAMES;
 // to sign someone you need the cash to pay him for the rest of this season
-// free agents want a signing bonus in cash up front: $250K at 1 star up to $2.5M at 5 stars, to the nearest $50K
-const signBonus = p => Math.round((.25 + (clamp(starsSmooth(p), 1, 5) - 1) * .5625) * 20) / 20;
+// free agents want a signing bonus in cash up front: a tenth of a season's pay ($2.5K for a 1-star, $55K for a 5-star)
+const signBonus = p => Math.round(askSalary(p) * 100) / 1000;
 const FAN_WIN = 4, FAN_LOSS = -4, FAN_NEW = 1, NEW_GAMES = 3, FAN_MIN = 15;
 const FAN_OFFSEASON = 15;                                            // fans lost between seasons (user, 2026-10-05): interest cools, win them back
 /* A player's line (user's definitions): pts = GOALS, catches in the end zone (kept in the box score); ast = his throws
@@ -807,10 +817,9 @@ function simCredit(box, pbox){ creditPoss({ pl:rosterArr(), box, pb:pbox }, null
 function applyResult(M, us, them, box, pbox = {}){
   const win = us > them, t = userTeam();
   if (M.kind === 'regular') M.home ? record(t, M.opp, us, them) : record(M.opp, t, them, us);
-  const H = M.home ? homeGate() : { att:0, crowd:0, tickets:0, food:0, parking:0, total:0 };   // before fans change
+  const H = M.home ? homeGate() : awayCrowd(M.opp);                 // before fans change
   const att = H.att, gate = H.tickets;
-  const tv = tvDeal(M.home);                                        // fans going into the game + star power on the roster
-  G.cash += H.total + tv.total; G.fin.gate += gate; G.fin.tv += tv.total;
+  G.cash += H.total; G.fin.gate += gate; G.fin.sponsor = (G.fin.sponsor || 0) + H.sponsor;
   G.fin.food = (G.fin.food || 0) + H.food; G.fin.parking = (G.fin.parking || 0) + H.parking;
   const cr = gameCredits();                                         // by fans going into the game
   G.credits += cr;
@@ -831,7 +840,7 @@ function applyResult(M, us, them, box, pbox = {}){
   for (const p of rosterArr()) { p.gp++; p.pts += box[p.id] || 0; }
   addStats(rosterArr(), box, pbox);                                 // this season, and career
   const top = Object.entries(box).map(([id, pts]) => [rosterArr().find(p => p.id === id), pts]).filter(x => x[0]).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  G.last = { opp:M.opp.id, home:M.home, us, them, win, gate, tv:tv.total, tvFans:tv.fans, tvStars:tv.stars, tvFanPct:Math.round(fansBefore), oppSt:teamR(M.opp).stars, ourSt:userRatings().stars, cr, pay, salaries, fanResult, newBoost, fansBefore, fans:G.fans, cash:G.cash, att, crowd:H.crowd, food:H.food, parking:H.parking, kind:M.kind, round:M.kind === 'playoffs' ? M.label : '', top:top.map(([p, pts]) => ({ name:`${p.fn[0]}. ${p.ln}`, pos:p.pos, pts })) };
+  G.last = { opp:M.opp.id, home:M.home, us, them, win, gate, sponsor:H.sponsor, sponsorRate:sponsorPer(), oppSt:teamR(M.opp).stars, ourSt:userRatings().stars, cr, pay, salaries, fanResult, newBoost, fansBefore, fans:G.fans, cash:G.cash, att, crowd:H.crowd, food:H.food, parking:H.parking, kind:M.kind, round:M.kind === 'playoffs' ? M.label : '', top:top.map(([p, pts]) => ({ name:`${p.fn[0]}. ${p.ln}`, pos:p.pos, pts })) };
 }
 function userPlaysThisWeek(){ return G.schedule[G.week]?.some(g => g.h === 'U' || g.a === 'U'); }
 function skipByes(){ while (G.phase === 'regular' && G.week < G.schedule.length && !userPlaysThisWeek()) finishWeek(); }
@@ -853,6 +862,7 @@ function finishWeek(){
      round 3  the final
    P.games is the round being played (East, Central, South, West order), P.hist[round] = [home, away, winner] for the rounds done. */
 const PO_LAST = 3;
+const PRIZE = [.01, .025, .05, .15];                                   // prize money for winning each round (user): $10K division semifinal, $25K division final, $50K semifinal, $150K the final
 const poSeeds = () => DIVS.map(([c]) => confStandings(c).slice(0, 3).map(t => t.id));
 function startPlayoffs(){
   const div = poSeeds();
@@ -878,14 +888,11 @@ function playoffRound(userWinner){
   const w = P.games.map(([h, a]) => (userWinner && (h === 'U' || a === 'U')) ? userWinner : sim(h, a));
   const l = P.games.map(([h, a], i) => w[i] === h ? a : h);
   P.hist[P.round] = P.games.map(([h, a], i) => [h, a, w[i]]);
-  if (P.games.some(m => m.includes('U'))) P.reached = P.round;
+  if (P.games.some(m => m.includes('U'))) { P.reached = P.round; if (w.includes('U')) { G.cash += PRIZE[P.round]; G.fin.bonus += PRIZE[P.round]; } }   // prize money for the round just won
   P.out.push(...l);
   if (P.round === PO_LAST) {
     P.champ = w[0]; P.round++; P.userOut = P.out.includes('U');
-    if (P.reached === PO_LAST) {
-      if (P.champ === 'U') { G.cash += 3; G.fin.bonus += 3; G.credits += 10; }
-      else { G.cash += 1; G.fin.bonus += 1; }
-    }
+    if (P.champ === 'U') G.credits += 10;
     startOffseason(); return;
   }
   if (P.round === 0) P.games = P.div.map((d, i) => [d[0], w[i]]);
@@ -972,14 +979,14 @@ function startOffseason(){
   });
   const order = standings().reverse().map(x => x.id);
   const prospects = [];
-  POS.forEach(pos => { for (let i = 0; i < 2; i++) { const p = makePlayer(pos, rnd(2.5, 5.5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1.5, 4.5)) * 2) / 2); p.sal = Math.max(1, Math.round(askSalary(p)) / 2); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); prospects.push(p); } });
+  POS.forEach(pos => { for (let i = 0; i < 2; i++) { const p = makePlayer(pos, rnd(2.5, 5.5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1.5, 4.5)) * 2) / 2); p.sal = halfPay(p); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); prospects.push(p); } });
   G.phase = 'offseason';
   const fansWas = G.fans; G.fans = Math.max(FAN_MIN, G.fans - FAN_OFFSEASON);
   G.off = { step:'summary', finish, champ:`${champ.city} ${champ.name}`, record:`${t.w}-${t.l}`, fansWas, fansNow:G.fans, changes, retired, order, prospects, picks:2, round:1, fin:{ ...G.fin } };
   save();
 }
 function startNewSeason(){
-  for (const pos of POS) if (!G.roster[pos]) { const p = makePlayer(pos, rnd(2, 3), ri(22, 30)); p.sal = 1; p.yrs = 1; G.roster[pos] = p; }
+  for (const pos of POS) if (!G.roster[pos]) { const p = makePlayer(pos, rnd(2, 3), ri(22, 30)); p.sal = SAL_LO; p.yrs = 1; G.roster[pos] = p; }
   G.season++; G.week = 0; G.phase = 'regular'; G.playoffs = null; G.off = null; G.last = null; G.results = [];
   for (const t of G.league) t.w = t.l = t.pf = t.pa = 0;
   for (const p of [...G.league.flatMap(t => t.players || []), ...rosterArr(), ...G.fa, ...(G.pool || [])]) p.s = {};
@@ -1045,7 +1052,7 @@ function card(p, opts = {}){
 }
 function capBar(extra = ''){
   const pr = payroll();
-  return `<div class="capbar"><div class="cap"><div class="t">SALARY CAP <span class="num">${money(pr)} / ${money(capNow())}</span></div><div class="track"><i style="width:${clamp(pr / capNow() * 100, 0, 100)}%"></i></div></div>${extra}</div>`;
+  return `<div class="capbar"><div class="cap"><div class="t" style="margin:4px 0">PAYROLL <span class="num">${money(pr)}</span> A SEASON · <span class="num">${money(pr / PAY_GAMES)}</span> A GAME</div></div>${extra}</div>`;
 }
 
 function render(){
@@ -1208,15 +1215,14 @@ function draftHTML(){
 }
 let faPos = 'HN';                                                    // free agents are shown one position at a time
 function faHTML(){
-  const room = capNow() - payroll();
   const list = G.fa.filter(p => p.pos === faPos).sort((a, b) => pAvg(b) - pAvg(a));
   const tabs = POS.map(pos => `<button class="btn sm ${pos === faPos ? 'go' : ''}" data-a="faPos" data-p="${pos}">${pos}</button>`).join('');
   return `${topBar('Free agents', `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
     <div class="row fatabs">${tabs}<span class="muted grow" style="font-size:12px;text-align:right">Your ${faPos}: ${G.roster[faPos] ? `${esc(G.roster[faPos].ln)} ${starsHTML(pStars(G.roster[faPos]))}` : 'empty'}</span></div>
     <div class="cards farow" style="--n:${Math.max(5, list.length)}">${list.length ? '' : '<div class="muted">No free agents at this position right now.</div>'}${list.map(p => { const need = signBonus(p); const cur = G.roster[p.pos]; const newPay = payroll() - (cur ? cur.sal : 0) + askSalary(p);
-      const why = G.cash < need ? `NEEDS <span class="num">${money(need)}</span> CASH` : newPay > capNow() ? 'NO CAP ROOM' : ''; return card(p, { attr:`data-fa="${p.id}"`, dim:!!why, flag:why, fa:true }); }).join('')}</div>
+      const why = G.cash < need ? `NEEDS <span class="num">${money(need)}</span> CASH` : ''; return card(p, { attr:`data-fa="${p.id}"`, dim:!!why, flag:why, fa:true }); }).join('')}</div>
     ${capBar(`<div class="box" style="text-align:center"><div class="label">Cash</div><div class="num ${G.cash < 0 ? 'debt' : ''}">${money(G.cash)}</div></div>`)}
-    <div class="muted fanote" style="font-size:12px;margin-top:6px">Signing replaces your player at that position. Bonus is paid up front, then 1/16 of the salary every game. Cap room: <span class="num">${money(room)}</span>.</div>`;
+    <div class="muted fanote" style="font-size:12px;margin-top:6px">Signing replaces your player at that position. Bonus is paid up front, then 1/16 of the salary every game. There is no salary cap.</div>`;
 }
 function leagueHTML(){
   const table = conf => `<div class="panel" style="overflow-x:auto"><div class="label" style="margin-bottom:4px">${DIV_NAME[conf]}</div><table><thead><tr><th>Team</th><th>W</th><th>L</th><th>Diff</th><th>Team</th></tr></thead><tbody>
@@ -1272,46 +1278,16 @@ function leadersHTML(){
 }
 function gateText(){
   const H = homeGate();
-  return `${Math.round(H.att * 100)}% full · ${H.crowd.toLocaleString()} fans<br>Tickets ${money(H.tickets)} + food ${money(H.food)} + parking ${money(H.parking)} = <b class="good">${money(H.total)}</b> a home game`;
+  return `${Math.round(H.att * 100)}% full · ${H.crowd.toLocaleString()} of ${seats().toLocaleString()} seats<br>Tickets ${money(H.tickets)} + food ${money(H.food)} + parking ${money(H.parking)} + sponsors ${money(H.sponsor)} = <b class="good">${money(H.total)}</b> a home game`;
 }
-/* ---- money outlook: an estimate of a home and an away game's net, and the move worth the most right now ----
-   Uses the same formulas as a real game (gate + TV - salaries). Suggestions are ranked by dollars per season. */
-const PER_FAN_SPEND = (t = G.ticket) => (t + fanSpend()) / 1e6;   // what one fan in the seats is worth
-function gateAt(fansPct, ticket = G.ticket, level = G.fac.arena){
-  const att = clamp(fansPct / 100 - (ticket - TICKET_FAIR) / 700, 0, 1), crowd = seats(level) * att;
-  return crowd * PER_FAN_SPEND(ticket);
+/* ---- money outlook: an estimate of what a home game and an away game leave after paying the players ---- */
+function gateAt(fansPct, ticket = G.ticket, level){
+  return seats(level) * attAt(fansPct, ticket) * (ticket + fanSpend() + sponsorPer()) / 1e6;
 }
 function moneyOutlook(){
-  const f = Math.round(G.fans), star = rosterArr().reduce((s, p) => s + tvStarsFor(p), 0), payGame = payroll() / PAY_GAMES;
-  const home = gateAt(f) + f * TV_HOME_PER_FAN + star - payGame, away = f * TV_AWAY_PER_FAN + star * TV_AWAY_STARS - payGame;
-  const season = SEASON_GAMES / 2 * (home + away), tips = [];
-  // win more: every win is +3% fans, which pays at every home game after it
-  const winWorth = gateAt(Math.min(100, f + FAN_WIN)) - gateAt(f) + FAN_WIN * TV_HOME_PER_FAN;
-  if (f < 100) tips.push({ v:winWorth * 7, t:`<b>Win games.</b> Each win is about +${FAN_WIN}% fans (more against better teams), worth about <span class="num">${money(winWorth)}</span> more every home game after it.` });
-  // a bigger arena, when the seats are what's holding the gate back
-  if (G.fac.arena < FAC_MAX) {
-    const more = gateAt(f, G.ticket, G.fac.arena + 1) - gateAt(f), cost = facCost('arena');
-    if (more > 0) tips.push({ v:more * 7 - cost / 2, t:`<b>Upgrade the arena</b> (<span class="num">${money(cost)}</span>): about <span class="num">+${money(more)}</span> a home game, paid back in ${Math.ceil(cost / more)} home games.` });
-  }
-  // better food and parking: pays at any crowd, most when the building is busy
-  if (G.fac.amenities < FAC_MAX) {
-    const crowd = seats(G.fac.arena) * clamp(f / 100 - (G.ticket - TICKET_FAIR) / 700, 0, 1), cost = facCost('amenities');
-    const more = crowd * (fanSpend(G.fac.amenities + 1) - fanSpend()) / 1e6;
-    if (more > 0) tips.push({ v:more * 7 - cost / 2, t:`<b>Upgrade Food + Parking</b> (<span class="num">${money(cost)}</span>): about <span class="num">+${money(more)}</span> a home game, paid back in ${Math.ceil(cost / more)} home games.` });
-  }
-  // the ticket price that earns the most at these fans
-  let best = G.ticket, bestV = gateAt(f);
-  for (let t = TICKET_MIN; t <= TICKET_MAX; t += 10) { const v = gateAt(f, t); if (v > bestV + 1e-9) { bestV = v; best = t; } }
-  if (best !== G.ticket && bestV - gateAt(f) > .02) tips.push({ v:(bestV - gateAt(f)) * 7, t:`<b>Set tickets to <span class="num">$${best}</span>.</b> At ${f}% fans that earns about <span class="num">+${money(bestV - gateAt(f))}</span> a home game.` });
-  // payroll: when you're losing money, the player costing the most per star
-  if (season < 0 && rosterArr().length) {
-    const worst = rosterArr().slice().sort((a, b) => b.sal / Math.max(1, pStars(b)) - a.sal / Math.max(1, pStars(a)))[0];
-    const save = worst.sal / PAY_GAMES - tvStarsFor(worst) * 1.25;
-    if (save > .05) tips.push({ v:save * 14, t:`<b>Payroll is the drain.</b> ${esc(worst.fn[0])}. ${esc(worst.ln)} (${pStars(worst)}★, <span class="num">${money(worst.sal)}</span>/yr) costs about <span class="num">${money(save)}</span> a game more than his star power brings in.` });
-  }
-  if (season > 1.5 && capNow() - payroll() >= 3) tips.push({ v:.01, t:`<b>You're making money.</b> With <span class="num">${money(capNow() - payroll())}</span> of cap room you can afford to add a star; they pay back in wins, fans and TV.` });
-  tips.sort((a, b) => b.v - a.v);
-  return { home, away, season, tips:tips.slice(0, 2) };
+  const payGame = payroll() / PAY_GAMES, others = G.league.filter(t => !t.user);
+  const home = gateAt(G.fans) - payGame, away = avg(others.map(t => awayCrowd(t).total)) - payGame;
+  return { home, away, season:SEASON_GAMES / 2 * (home + away) };
 }
 function outlookHTML(){
   const O = moneyOutlook(), sgn = v => `<span class="num ${v < 0 ? 'bad' : 'good'}">${v < 0 ? '-' : '+'}${money(Math.abs(v))}</span>`;
@@ -1321,23 +1297,22 @@ function outlookHTML(){
   </div>`;
 }
 function officeHTML(){
-  const f = G.fin, cap = capNow();
+  const f = G.fin;
   return `${topBar('Front office', `<button class="btn icon" data-go="hub" aria-label="Back">✕</button>`)}
     <div class="hub">
       <div class="stack">
         <div class="panel">
           <div class="row between"><span class="label">Cash</span><span class="px num ${G.cash < 0 ? 'debt' : 'good'}" style="font-size:18px">${money(G.cash)}</span></div>
-          <div class="muted num fo-detail" style="font-size:12px;margin-top:4px;font-weight:500">This season: tickets ${money(f.gate)} · food ${money(f.food || 0)} · parking ${money(f.parking || 0)} · TV ${money(f.tv)}${f.bonus ? ` · playoffs ${money(f.bonus)}` : ''} · salaries -${money(f.salaries || 0)} · signing bonuses -${money(f.bonuses || 0)} · upgrades -${money(f.spend)}</div>
+          <div class="muted num fo-detail" style="font-size:12px;margin-top:4px;font-weight:500">This season: tickets ${money(f.gate)} · food ${money(f.food || 0)} · parking ${money(f.parking || 0)} · sponsors ${money(f.sponsor || 0)}${f.bonus ? ` · playoffs ${money(f.bonus)}` : ''} · salaries -${money(f.salaries || 0)} · signing bonuses -${money(f.bonuses || 0)} · upgrades -${money(f.spend)}</div>
           <div class="muted fo-detail" style="font-size:12px;margin-top:4px">Each game your players are paid 1/16 of their salary (<span class="num">${money(payroll() / PAY_GAMES)}</span> a game right now). Cash also pays for upgrades and signing bonuses.</div>
         </div>
         <div class="panel">
           <div class="row between"><span class="label">Ticket price</span><span class="px num" id="tp">$${G.ticket}</span></div>
-          <input type="range" id="ticket" min="${TICKET_MIN}" max="${TICKET_MAX}" step="10" value="${G.ticket}" style="width:100%;accent-color:#ffd23f" aria-label="Ticket price">
+          <input type="range" id="ticket" min="${TICKET_MIN}" max="${TICKET_MAX}" step="5" value="${G.ticket}" style="width:100%;accent-color:#ffd23f" aria-label="Ticket price">
           <div class="muted num" style="font-size:12px;font-weight:500" id="ti">${gateText()}</div>
         </div>
-        <div class="panel row"><div class="grow"><div class="px" style="font-size:13px">Salary cap <span class="yellow num">${money(cap)}</span></div>
-          <div class="muted" style="font-size:12px">Your payroll can't go over it. Each upgrade adds <span class="num">${money(CAP_STEP)}</span>, up to <span class="num">${money(CAP_MAX)}</span>. Paid in credits (you have <span class="num">${G.credits}</span>).</div></div>
-          ${cap < CAP_MAX ? `<button class="btn sm go" data-a="capUp" ${G.credits < CAP_COST ? 'disabled' : ''}>${CAP_COST} CR</button>` : '<span class="px yellow">MAX</span>'}</div>
+        <div class="panel"><div class="px" style="font-size:13px">Payroll <span class="yellow num">${money(payroll())}</span> <span class="muted" style="font-family:var(--body);font-size:12px">a season</span></div>
+          <div class="muted" style="font-size:12px">No salary cap: sign anyone whose signing bonus you can pay in cash. Then he's paid every game, win or lose.</div></div>
       </div>
       <div class="stack">${outlookHTML()}<div class="fac-list">${Object.entries(FAC).map(([k, F]) => { const lv = G.fac[k], c = facCost(k);
         return `<div class="panel row"><div class="grow"><div class="px" style="font-size:13px">${F.name} <span class="yellow">LV${lv}</span></div><div class="fshort num">${F.short(lv)}</div><div class="muted" style="font-size:12px">${F.desc(lv)}</div></div>${lv < FAC_MAX ? `<button class="btn sm go" data-up="${k}" ${G.cash < c ? 'disabled' : ''}>${money(c)}</button>` : '<span class="px yellow">MAX</span>'}</div>`; }).join('')}</div></div>
@@ -1346,15 +1321,13 @@ function officeHTML(){
 // earnings minus costs for the game just played
 function postMoney(L){
   const food = L.food || 0, parking = L.parking || 0;
-  const earn = L.gate + food + parking + L.tv, net = earn - L.salaries;
+  const sponsor = L.sponsor || 0, earn = L.gate + food + parking + sponsor, net = earn - L.salaries;
   const line = (label, v, cls = '') => `<div class="row between"><span>${label}</span><span class="num ${cls}">${v}</span></div>`;
   return `<div class="panel" style="font-size:14px">
     <div class="label" style="margin-bottom:4px">Earnings</div>
     ${L.gate ? `${line(`Tickets <span class="muted num">(${(L.crowd || 0).toLocaleString()} fans · ${Math.round(L.att * 100)}% full)</span>`, '+' + money(L.gate), 'good')}
       ${line('Food', '+' + money(food), 'good')}${line('Parking', '+' + money(parking), 'good')}` : line('Tickets, food, parking <span class="muted">(away game)</span>', '$0', 'muted')}
-    ${L.tvFans != null
-      ? `${line(`${L.home ? 'Local' : 'National'} TV <span class="muted num">(${L.tvFanPct}% fans)</span>`, '+' + money(L.tvFans), 'good')}${line(`Star power${L.home ? '' : ' <span class="muted">(road ×1.5)</span>'}`, '+' + money(L.tvStars), 'good')}`
-      : line('TV money', '+' + money(L.tv), 'good')}
+    ${line(`Sponsors <span class="muted num">(${(L.crowd || 0).toLocaleString()} fans${L.gate ? '' : ' at their place'} × $${L.sponsorRate || 0})</span>`, '+' + money(sponsor), 'good')}
     <div class="label" style="margin:8px 0 4px">Costs</div>
     ${L.pay.map(x => line(`<span class="muted">${x.pos}</span> ${esc(x.name)}`, '-' + money(x.amt), 'bad')).join('')}
     <div class="row between" style="border-top:2px solid rgba(255,255,255,.2);margin-top:6px;padding-top:4px"><b>Net</b><b class="num ${net >= 0 ? 'good' : 'bad'}">${net >= 0 ? '+' : '-'}${money(Math.abs(net))}</b></div>
@@ -1443,15 +1416,14 @@ $('#ui').addEventListener('click', ev => {
   if (kt) { const [who, part, v] = kt.dataset.kit.split('|'); kitSel[who][part] = v; render(); return; }
   const pl = ev.target.closest('[data-player]'); if (pl) { sel = pl.dataset.player; screen = 'player'; render(); return; }
   const tr = ev.target.closest('[data-train]');
-  if (tr) { const p = G.roster[sel], k = tr.dataset.train, c = trainCost(p, k); if (G.credits >= c && p[k] < 10) { G.credits -= c; p[k]++; (p.tr ||= {})[k] = (p.tr[k] || 0) + 1; p.sal = Math.max(p.sal, 1); save(); render(); } return; }
+  if (tr) { const p = G.roster[sel], k = tr.dataset.train, c = trainCost(p, k); if (G.credits >= c && p[k] < 10) { G.credits -= c; p[k]++; (p.tr ||= {})[k] = (p.tr[k] || 0) + 1; save(); render(); } return; }
   const up = ev.target.closest('[data-up]');
-  if (up) { const k = up.dataset.up, c = facCost(k); if (G.fac[k] < FAC_MAX && G.cash >= c) { G.cash -= c; G.fin.spend += c; G.fac[k]++; if (k === 'recruiting') G.fa.forEach(p => { p.sal = askSalary(p); }); save(); render(); toast(`${FAC[k].name} is now level ${G.fac[k]}.`); } return; }
+  if (up) { const k = up.dataset.up, c = facCost(k); if (G.fac[k] < FAC_MAX && G.cash >= c) { G.cash -= c; G.fin.spend += c; G.fac[k]++; save(); render(); toast(`${FAC[k].name} is now level ${G.fac[k]}.`); } return; }
   const fa = ev.target.closest('[data-fa]');
   if (fa) {
     const p = G.fa.find(x => x.id === fa.dataset.fa); if (!p) return;
     const need = signBonus(p), cur = G.roster[p.pos];
     if (G.cash < need) { toast(`His signing bonus is ${money(need)}. You have ${money(G.cash)}.`); return; }
-    if (payroll() - (cur ? cur.sal : 0) + askSalary(p) > capNow()) { toast('Not enough cap room.'); return; }
     p.sal = askSalary(p); p.yrs = askYears(p);
     compareSheet(p, `Sign him · <span class="num">${money(need)}</span>`, () => {
       G.cash -= need; G.fin.bonuses = (G.fin.bonuses || 0) + need;
@@ -1497,11 +1469,10 @@ $('#ui').addEventListener('click', ev => {
   else if (act === 'champOk') { G.last.celebrated = true; save(); render(); }
   else if (act === 'simPlayoffs') { resolvePlayoffs(null); if (G.phase === 'playoffs') resolvePlayoffs(null); save(); render(); }
   else if (act === 'settings') speedSheet();
-  else if (act === 'capUp') { if (G.credits >= CAP_COST && capNow() < CAP_MAX) { G.credits -= CAP_COST; G.cap = Math.min(CAP_MAX, capNow() + CAP_STEP); save(); render(); toast(`Salary cap is now ${money(G.cap)}.`); } }
   else if (act === 'faPos') { faPos = a.dataset.p; render(); }
   else if (act === 'lsort') { const k = a.dataset.k; if (lead.k === k) lead.asc = !lead.asc; else { lead.k = k; lead.asc = k === 'tov'; } render(); }
   else if (act === 'offNext') { O.step = O.step === 'summary' ? 'resign' : O.step === 'resign' ? 'draft' : 'fa'; save(); render(); }
-  else if (act === 'resign') { const p = G.roster[a.dataset.pos]; const price = resignPrice(p), np = payroll() - p.sal + price; if (np > capNow()) { toast('Not enough cap room.'); return; } p.sal = price; p.yrs = askYears(p); save(); render(); }
+  else if (act === 'resign') { const p = G.roster[a.dataset.pos]; const price = resignPrice(p); p.sal = price; p.yrs = askYears(p); save(); render(); }
   else if (act === 'letgo') { const p = G.roster[a.dataset.pos]; G.roster[p.pos] = null; p.sal = askSalary(p); p.yrs = askYears(p); if (p.age < 34) G.fa.push(p); save(); render(); }
   else if (act === 'draftDone') { O.step = 'fa'; screen = 'hub'; save(); render(); }
   else if (act === 'newSeason') { startNewSeason(); render(); }
@@ -1512,7 +1483,7 @@ $('#ui').addEventListener('click', ev => {
       sh.querySelector('#yes').onclick = () => {
         if (G.cash < cost) { closeSheet(); toast(`You need ${money(cost)} cash to release him. You have ${money(G.cash)}.`); return; }
         G.cash -= cost; G.fin.spend += cost;
-        const w = makePlayer(p.pos, rnd(2, 3), ri(22, 30)); w.sal = 1; w.yrs = 1;
+        const w = makePlayer(p.pos, rnd(2, 3), ri(22, 30)); w.sal = SAL_LO; w.yrs = 1;
         p.sal = askSalary(p); p.yrs = askYears(p); G.fa.push(p); G.roster[p.pos] = w;
         closeSheet(); screen = 'roster'; save(); render(); toast(`Released ${p.ln}. ${w.fn} ${w.ln} walks on.`);
       };
@@ -1534,7 +1505,7 @@ function aiDraft(){
   const O = G.off;
   const n = Math.min(O.prospects.length, ri(3, 5));
   for (let i = 0; i < n; i++) { const best = [...O.prospects].sort((a, b) => b.pot - a.pot)[ri(0, 1)] || O.prospects[0]; O.prospects = O.prospects.filter(x => x !== best); }
-  while (O.prospects.length < 10) { const pos = pick(POS); const p = makePlayer(pos, rnd(2.5, 5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1, 4)) * 2) / 2); p.sal = Math.max(1, Math.round(askSalary(p)) / 2); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); O.prospects.push(p); }
+  while (O.prospects.length < 10) { const pos = pick(POS); const p = makePlayer(pos, rnd(2.5, 5), ri(19, 22)); p.pot = Math.min(10, Math.round((pAvg(p) + rnd(1, 4)) * 2) / 2); p.sal = halfPay(p); p.yrs = 3; p.scout = RATE.reduce((o, k) => (o[k] = clamp(p[k] + ri(-1, 1) * DRAFT_ERR, 1, 10), o), {}); O.prospects.push(p); }
 }
 function speedSheet(inGame){
   openSheet(`<div class="px">Game length</div><div class="muted" style="font-size:13px">There's no clock: the first team to this many goals wins.</div>
@@ -2114,7 +2085,7 @@ function startMatch(){
     our:POS.map(pos => ent(G.roster[pos], 1)), th:ng.opp.players.map(p => ent(p, -1)),
     disc:{ x:55, y:20, z:0, holder:null, fl:null }, off:'us', stall:0, aim:null, think:1, first:Math.random() < .5 ? 'us' : 'them', chase:null };
   // the stands fill to this game's attendance: yours from fans and ticket price, theirs from their record
-  const oppGp = ng.opp.w + ng.opp.l, oppFill = clamp(.55 + (oppGp ? ng.opp.w / oppGp : .5) * .4, .4, .98);
+  const oppFill = awayCrowd(ng.opp).att;
   const po = ng.kind === 'playoffs';                                // playoff atmosphere: the look only, the gate still follows the fans
   M.fill = po ? 1 : ng.home ? attendance() : oppFill;
   $('#rdn').textContent = po ? ROUND_SHORT[ng.label] || ng.label : ''; $('#rdn').hidden = !po;
