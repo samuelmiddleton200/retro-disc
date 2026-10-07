@@ -608,7 +608,7 @@ function newGame(pickAbbr){
     for (let g = 0; pStars(p) !== 2 && g < 40; g++) { const up = pStars(p) < 2, k = RATE.reduce((a, b) => (up ? p[a] <= p[b] : p[a] >= p[b]) ? a : b); p[k] = clamp(p[k] + (up ? 1 : -1), 1, 10); }
   }
   const used = new Set(); for (const pos of POS) { const p = roster[pos]; while (used.has(p.num)) p.num = ri(0, 55); used.add(p.num); }
-  G = { v:2, season:1, week:0, phase:'regular', cash:2, credits:4, fans:25, boosts:[], gpSeason:0, cap:CAP_START, ticket:TICKET_FAIR, target:7,
+  G = { v:2, season:1, week:0, phase:'regular', cash:2, credits:4, fans:25, boosts:[], gpSeason:0, cap:CAP_START, ticket:TICKET_FAIR, target:5,
     fac:{ arena:1, amenities:1, marketing:1, recruiting:1 }, roster, league, schedule:confSchedule(league), results:[],
     fa:[], pool:[], history:[], playoffs:null, off:null, last:null, kit:{ j:'home', s:'home' }, fin:{ gate:0, tv:0, bonus:0, spend:0, salaries:0 } };
   refillFA(FA_SIZE);
@@ -743,11 +743,11 @@ function fakeBox(players, score){
   for (let i = ri(1, 4); i > 0; i--) pbFor(pb, wPick(players, p => p.spd + p.cat)).d++;
   addStats(players, box, pb);
 }
-/* Every game is first to 5, 7 or 9 goals (user): no clock. The length is picked before the game and every simulated
+/* Every game is first to 3, 4 or 5 goals (user): no clock. The length is picked before the game and every simulated
    game that week is played to the same number, so the whole league's stats stay comparable with ours.
    A simulated game trades possessions (a goal or a turnover both hand the disc over) until someone gets there. */
-const GAME_TO = [5, 7, 9];
-const gameTo = () => (G && GAME_TO.includes(G.target) ? G.target : 7);
+const GAME_TO = [3, 4, 5];
+const gameTo = () => (G && GAME_TO.includes(G.target) ? G.target : 5);
 function simScore(h, a, hMeter, aMeter, hBox = null, hPb = null, aBox = null, aPb = null){
   const H = teamR(h), A = teamR(a), T = gameTo();
   const side = (t, box, pb) => ({ t, pl:teamPlayers(t), box:box || {}, pb:pb || {} });
@@ -2011,22 +2011,23 @@ function drawHD(g, p, U, frame, X, feetY, face, ghost){
 }
 /* Players are drawn about 2 yards tall (user): the 14 x 24 letter sprite at half size, which is exactly one screen
    pixel per sprite pixel on the 2x canvas, so it stays crisp. Benches and coaches are drawn at the same size. */
-const BENCH_GAP = 1.3;                                                // yards between seats
+const BENCH_GAP = 1.4;                                                // yards between seats
+const SPR = .55;                                                      // sprite pixels to field pixels: half size, plus the 10% the user asked for
 function drawHalf(g, spr, X, top, face){
-  const h = spr.height / 2;
-  if ((face || 1) < 0) { g.save(); g.translate(X, 0); g.scale(-1, 1); g.drawImage(spr, -3.5, top, 7, h); g.restore(); }
-  else g.drawImage(spr, X - 3.5, top, 7, h);
+  const w = 14 * SPR, h = spr.height * SPR;
+  if ((face || 1) < 0) { g.save(); g.translate(X, 0); g.scale(-1, 1); g.drawImage(spr, -w / 2, top, w, h); g.restore(); }
+  else g.drawImage(spr, X - w / 2, top, w, h);
 }
-// a jersey number in the 3 x 5 pixel font, centered on the chest. Each font pixel is NUM_PX of a field pixel (3 real
-// pixels at the normal zoom): a quarter smaller than the jersey's own pixels, so the shirt color shows around it (user)
-const NUM_PX = .375;
+// a jersey number in the 3 x 5 pixel font, centered on the chest, each font pixel a quarter smaller than the jersey's
+// own pixels so the shirt color shows around it (user)
+const NUM_PX = SPR * .75;
 function drawSmallNumber(g, X, top, numRow, num, color){
-  const ds = String(num).split(''), w = (ds.length * 4 - 1) * NUM_PX, x0 = Math.round((X - w / 2) * 8) / 8, y0 = Math.round((top + numRow / 2 + .25) * 8) / 8;
+  const ds = String(num).split(''), w = (ds.length * 4 - 1) * NUM_PX, x0 = X - w / 2, y0 = top + (numRow + .5) * SPR;
   g.fillStyle = color;
-  ds.forEach((d, i) => (FONT[d] || FONT[' ']).forEach((r, y) => [...r].forEach((ch, x) => { if (ch === '#') g.fillRect(x0 + (i * 4 + x) * NUM_PX, y0 + y * NUM_PX, NUM_PX, NUM_PX); })));
+  ds.forEach((d, i) => (FONT[d] || FONT[' ']).forEach((r, y) => [...r].forEach((ch, x) => { if (ch === '#') g.fillRect(x0 + (i * 4 + x) * NUM_PX, y0 + y * NUM_PX, NUM_PX + .02, NUM_PX + .02); })));
 }
 function drawSmall(g, p, U, frame, X, feetY, face){
-  const spr = sprite(p, U, frame), top = feetY - spr.height / 2;
+  const spr = sprite(p, U, frame), top = feetY - spr.height * SPR;
   drawHalf(g, spr, X, top, face); drawSmallNumber(g, X, top, spr.numRow, p.num, U.T);
   return top;
 }
@@ -2037,12 +2038,12 @@ function drawBench(side){
   ctx.fillStyle = '#59628c'; ctx.fillRect(x0, seatY - 3, x1 - x0, 1);                       // seat
   ctx.fillStyle = '#232a45'; ctx.fillRect(x0, seatY - 2, 1, 2); ctx.fillRect(x1 - 1, seatY - 2, 1, 2);
   B.players.forEach((p, i) => {
-    const X = Math.round(sx(B.x0 + i * BENCH_GAP)), spr = seatedSprite(p, U), top = seatY - spr.height / 2 + .5;
+    const X = Math.round(sx(B.x0 + i * BENCH_GAP)), spr = seatedSprite(p, U), top = seatY - spr.height * SPR + .5;
     drawHalf(ctx, spr, X, top, 1); drawSmallNumber(ctx, X, top, spr.numRow, p.num, U.T);
   });
   const co = M.coaches[side], X = Math.round(sx(co.x)), Y = Math.round(sy(-0.5)), spr = coachSprite(co.look, co.tie);
   ctx.fillStyle = 'rgba(10,50,20,.34)'; ctx.fillRect(X - 3, Y - 1, 7, 1);
-  drawHalf(ctx, spr, X, Y - spr.height / 2, co.face);
+  drawHalf(ctx, spr, X, Y - spr.height * SPR, co.face);
 }
 function drawNumber(g, left, top, num, color){
   // drawn in half-pixels so a two-digit number fits inside the jersey; centered on the chest (sprite column 7)
@@ -2059,8 +2060,8 @@ function drawPlayer(e, U, marker){
   ctx.fillStyle = 'rgba(8,40,16,.38)'; ctx.fillRect(X - 3 + air, Yg - 1, 7 - air * 2, 2); ctx.fillRect(X - 2, Yg - 2 + air, 5, 1);
   let top;
   if ((e.dive || 0) > 0) {                                            // a layout: stretched out flat, arms first
-    const spr = sprite(e.p, U, 'shoot'), h = spr.height / 2, f = e.face || 1;
-    ctx.save(); ctx.translate(X, Yg - 3); ctx.rotate(f * Math.PI / 2 * .9); ctx.drawImage(spr, -3.5, -h / 2, 7, h); ctx.restore();
+    const spr = sprite(e.p, U, 'shoot'), h = spr.height * SPR, f = e.face || 1;
+    ctx.save(); ctx.translate(X, Yg - 3); ctx.rotate(f * Math.PI / 2 * .9); ctx.drawImage(spr, -7 * SPR, -h / 2, 14 * SPR, h); ctx.restore();
     top = Yg - 8;
   } else top = drawSmall(ctx, e.p, U, frame, X, Y, e.face || 1);
   if (marker) {
@@ -2182,7 +2183,8 @@ const inGoal = (p, side) => inField(p) && (side === 'us' ? p.x >= GOAL_R : p.x <
    seconds of a point: a low-stamina team then played the whole game a third slower and lost every race. */
 const PACE_FAST = 10 / 70, PACE_SLOW = 12 / 70, STA_PACE = .005, TIRE_YARDS = 300;
 const paceOf = e => lerp(PACE_SLOW, PACE_FAST, (clamp(e.p.spd, 1, 10) - 1) / 9) + STA_PACE * (10 - clamp(e.p.sta, 1, 10)) * clamp((e.run || 0) / TIRE_YARDS, 0, 1);
-const speedOf = e => 1 / paceOf(e);                                   // yards per second
+const SPEED_UP = 1.3;                                                 // everyone runs 30% faster than those numbers (user, 2026-10-07: "way too slow")
+const speedOf = e => SPEED_UP / paceOf(e);                            // yards per second: 9.1 at 10/10 speed, 7.6 at 1/10, when fresh
 function moveTo(e, tx, ty, sp, dt){
   const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy);
   if (d < .25) { e.moving = false; e.vx = e.vy = 0; return true; }
@@ -2501,12 +2503,12 @@ function update(dt){
   }
   if (M) hud();
 }
-/* After a goal: the game ends when someone reaches the target; halftime comes when the first team gets halfway there
-   (3 of 5, 4 of 7, 5 of 9), and the team that pulled to start the game receives to start the second half.
+/* After a goal: the game ends when someone reaches the target. A game to 5 has a halftime when the first team gets to 3,
+   and the team that pulled to start the game receives to start the second half; games to 3 or 4 are too short for one.
    Otherwise the team that just scored pulls to the other. */
 function afterGoal(){
   if (M.phase === 'break' || M.phase === 'done') return;
-  const final = Math.max(M.us, M.them) >= M.to, half = !final && !M.half && Math.max(M.us, M.them) >= Math.ceil(M.to / 2);
+  const final = Math.max(M.us, M.them) >= M.to, half = !final && !M.half && M.to >= 5 && Math.max(M.us, M.them) >= Math.ceil(M.to / 2);
   if (!final && !half) { startPull(otherSide(M.lastGoal)); return; }
   if (half) M.half = true;
   M.phase = final ? 'done' : 'break'; M.aim = null; M.disc.fl = null; hud();
