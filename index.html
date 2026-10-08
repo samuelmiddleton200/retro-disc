@@ -2378,7 +2378,7 @@ function tryCatch({ e, side, i, dd }){
     const band = CATCH[covered ? 'covered' : Math.hypot(e.vx || 0, e.vy || 0) > 1 ? 'running' : 'still'];
     p = lerp(band[0], band[1], (clamp(e.p.cat, 1, 10) - 1) / 9) * sp;
   } else p = (.05 + .016 * e.p.cat) * sp * (far ? .7 : 1) * (high ? .7 : 1) * (teamOf(F.side).some(o => o !== F.thrower && dist(o, d) < 2.2) ? .55 : 1) * ZONE[side].pick;   // a receiver right there shields it
-  e.poseT = .4; if (far) e.dive = .5; else if (high) e.z = .8;
+  e.poseT = .4; if (high) e.z = .8;                                   // arms up, and a hop for a high one. Nobody dives (the user had it taken out)
   if (Math.random() >= p) {
     if (own && !F.pull) { M.st[side].to++; if (side === 'us') pbFor(M.pbox, e.p).tgt++; turnover({ x:d.x, y:d.y }, otherSide(side), covered ? 'KNOCKED DOWN' : side === 'us' ? 'DROPPED' : 'THEY DROP IT'); }   // with a defender on him it was the defender's doing
     return;                                                           // a defender who misses just watches it go by
