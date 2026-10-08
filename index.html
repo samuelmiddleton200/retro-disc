@@ -2478,7 +2478,7 @@ const AI_LEAD = [.45, 1.2], AI_MISS = D => 2.5 + .16 * D, AI_BAD_READ = .12;   /
 /* He also doesn't see the whole field (user: "they always know the perfect person to pass to"): each time he looks up he
    only considers AI_LOOKS of his four teammates, picked at random, and AI_FORCE of the time he throws to the best of
    those even when that man is covered. */
-const AI_LOOKS = 3, AI_FORCE = .15;
+const AI_LOOKS = 4, AI_FORCE = .15;                                   // 4 = he sees every teammate (user, 2026-10-08: "im beating them 4-0 every game"; it was 3, and 2 before that)
 function aiThrow(side, dt){
   const h = M.disc.holder; if (!h || h.side !== side) return;
   M.think -= dt; if (M.think > 0 || teamOf(side)[h.i].slide) return;
